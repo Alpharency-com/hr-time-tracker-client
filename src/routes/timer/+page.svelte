@@ -470,15 +470,14 @@
 		referenceTime: Date = new Date()
 	): { valid: boolean; error?: string } {
 		const diffMs = referenceTime.getTime() - selectedTime.getTime();
-		const diffMinutes = diffMs / (1000 * 60);
+		const diffSeconds = diffMs / 1000;
+		const maxPastSeconds = MAX_START_TIME_PAST_MINUTES * 60;
 
-		// Check if in the future
-		if (diffMs < 0) {
+		if (diffSeconds < 0) {
 			return { valid: false, error: 'Start time cannot be in the future.' };
 		}
 
-		// Check if more than 60 minutes in the past
-		if (diffMinutes > MAX_START_TIME_PAST_MINUTES) {
+		if (diffSeconds > maxPastSeconds) {
 			return {
 				valid: false,
 				error: `Start time cannot be more than ${MAX_START_TIME_PAST_MINUTES} minutes in the past.`
@@ -486,6 +485,43 @@
 		}
 
 		return { valid: true };
+	}
+
+	function resolveCustomStartTime(referenceTime: Date = new Date()): Date {
+		return new Date(referenceTime.getTime() - sliderMinutesAgo * 60 * 1000);
+	}
+
+	async function extractStartTimerError(err: unknown): Promise<string | null> {
+		const response = (err as { response?: { status?: number; _data?: Record<string, unknown> } })
+			?.response;
+		if (!response) {
+			return null;
+		}
+
+		let errorData = response._data;
+		if (!errorData) {
+			try {
+				errorData = await parseErrorResponse(response);
+			} catch {
+				return null;
+			}
+		}
+
+		if (errorData?.start_time) {
+			const startTimeError = errorData.start_time;
+			return Array.isArray(startTimeError) ? startTimeError[0] : String(startTimeError);
+		}
+
+		if (errorData?.non_field_errors) {
+			const nonFieldError = errorData.non_field_errors;
+			return Array.isArray(nonFieldError) ? nonFieldError[0] : String(nonFieldError);
+		}
+
+		if (typeof errorData?.detail === 'string') {
+			return errorData.detail;
+		}
+
+		return null;
 	}
 
 	/**
@@ -531,14 +567,17 @@
 			return;
 		}
 
-		// Validate custom start time if enabled
-		if (useCustomStartTime && customStartTime) {
-			now = new Date();
-			const validation = validateStartTime(customStartTime, now);
+		const submitNow = new Date();
+		let startTimeForSubmit: Date | null = null;
+
+		if (useCustomStartTime) {
+			now = submitNow;
+			startTimeForSubmit = resolveCustomStartTime(submitNow);
+			const validation = validateStartTime(startTimeForSubmit, submitNow);
 			logger.debug('[timer] submit validation', {
-				now: now.toISOString(),
+				now: submitNow.toISOString(),
 				sliderMinutesAgo,
-				customStartTime: customStartTime.toISOString(),
+				customStartTime: startTimeForSubmit.toISOString(),
 				valid: validation.valid,
 				error: validation.error ?? null
 			});
@@ -565,9 +604,8 @@
 				tags: selectedTags
 			};
 
-			// Add custom start time if enabled
-			if (useCustomStartTime && customStartTime) {
-				payload.start_time = customStartTime.toISOString();
+			if (useCustomStartTime && startTimeForSubmit) {
+				payload.start_time = startTimeForSubmit.toISOString();
 				logger.debug('[timer] starting timer with custom start time', {
 					start_time: payload.start_time
 				});
@@ -598,32 +636,13 @@
 			sliderMinutesAgo = 0;
 			now = new Date();
 			startTimeValidationError = null;
-		} catch (err: any) {
-			// Handle API validation errors (400 Bad Request)
-			if (err?.response?.status === 400) {
-				try {
-					// Use the reusable error parsing utility
-					const errorData = await parseErrorResponse(err.response);
-
-					// Extract specific error messages from the API response
-					// API returns errors in Django REST framework format:
-					// - Field-specific errors: { "start_time": ["error message"] }
-					// - Non-field errors: { "non_field_errors": ["error message"] }
-					if (errorData?.start_time) {
-						startTimeValidationError = Array.isArray(errorData.start_time)
-							? errorData.start_time[0]
-							: errorData.start_time;
-					} else if (errorData?.non_field_errors) {
-						error = Array.isArray(errorData.non_field_errors)
-							? errorData.non_field_errors[0]
-							: errorData.non_field_errors;
-					} else {
-						error = 'Failed to start timer';
-					}
-				} catch (parseError) {
-					// If we can't parse the error response, log and show a generic message
-					console.error('Could not parse error response:', parseError, err);
-					error = 'Failed to start timer';
+		} catch (err: unknown) {
+			const message = await extractStartTimerError(err);
+			if (message) {
+				if (useCustomStartTime) {
+					startTimeValidationError = message;
+				} else {
+					error = message;
 				}
 			} else {
 				console.error('Failed to start timer:', err);
@@ -1272,7 +1291,7 @@
 								<button
 									class="btn btn-primary btn-lg rounded-full text-xl px-8"
 									type="submit"
-									disabled={!$network.isOnline}
+									disabled={!$network.isOnline || !!startTimeValidationError}
 								>
 									<span class="mr-2" aria-hidden="true">
 										<svg class="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">

@@ -486,6 +486,10 @@ export type ErrorResponse =
  * @param response - The error response object (can be Response or Ky-specific)
  * @returns Parsed error data as JSON object
  */
+import { attachJsonErrorData } from './authErrors';
+
+export { getAuthErrorMessage } from './authErrors';
+
 export async function parseErrorResponse(response: ErrorResponse): Promise<Record<string, any>> {
 	try {
 		// Method 1: Clone + parse (standard Response objects)
@@ -517,12 +521,16 @@ export async function parseErrorResponse(response: ErrorResponse): Promise<Recor
 
 export const auth = {
 	login: async (username: string, password: string) => {
-		const response = await ky
-			.post(`${get(baseUrl)}/auth/token/login/`, {
-				json: { username, password }
-			})
-			.json<{ auth_token: string }>();
-		return response.auth_token;
+		try {
+			const response = await ky
+				.post(`${get(baseUrl)}/auth/token/login/`, {
+					json: { username, password }
+				})
+				.json<{ auth_token: string }>();
+			return response.auth_token;
+		} catch (error: any) {
+			throw await attachJsonErrorData(error);
+		}
 	},
 	register: async (username: string, password: string, first_name: string, last_name: string) => {
 		try {
@@ -979,12 +987,15 @@ export const passkeys = {
 			.json<{ detail: string; credential: PasskeyCredential }>();
 	},
 	authenticateBegin: async (username: string): Promise<{ options: string }> => {
-		// Use ky directly (no auth token needed) for unauthenticated endpoints
-		return await ky
-			.post(`${get(baseUrl)}/api/passkeys/authenticate/begin/`, {
-				json: { username }
-			})
-			.json<{ options: string }>();
+		try {
+			return await ky
+				.post(`${get(baseUrl)}/api/passkeys/authenticate/begin/`, {
+					json: { username }
+				})
+				.json<{ options: string }>();
+		} catch (error: any) {
+			throw await attachJsonErrorData(error);
+		}
 	},
 	authenticateComplete: async (
 		username: string,
@@ -1001,22 +1012,25 @@ export const passkeys = {
 			is_staff: boolean;
 		};
 	}> => {
-		// Use ky directly (no auth token needed) for unauthenticated endpoints
-		return await ky
-			.post(`${get(baseUrl)}/api/passkeys/authenticate/complete/`, {
-				json: { username, credential }
-			})
-			.json<{
-				detail: string;
-				token: string;
-				user: {
-					id: number;
-					username: string;
-					first_name: string;
-					last_name: string;
-					profile_image: string | null;
-					is_staff: boolean;
-				};
-			}>();
+		try {
+			return await ky
+				.post(`${get(baseUrl)}/api/passkeys/authenticate/complete/`, {
+					json: { username, credential }
+				})
+				.json<{
+					detail: string;
+					token: string;
+					user: {
+						id: number;
+						username: string;
+						first_name: string;
+						last_name: string;
+						profile_image: string | null;
+						is_staff: boolean;
+					};
+				}>();
+		} catch (error: any) {
+			throw await attachJsonErrorData(error);
+		}
 	}
 };

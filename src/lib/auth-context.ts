@@ -1,7 +1,7 @@
 import { setContext, getContext } from 'svelte';
 import { writable, get } from 'svelte/store';
 import { authToken, user, globalLogout } from './stores';
-import { auth, passkeys } from './api';
+import { auth, getAuthErrorMessage, passkeys } from './api';
 import { startRegistration, startAuthentication } from '@simplewebauthn/browser';
 import { gotoApp } from './navigation';
 import { browser } from '$app/environment';
@@ -92,10 +92,10 @@ export function createAuthStore(): AuthStore {
 
 				return { success: true };
 			} catch (error: any) {
-				const errorMessage =
-					error.response?.status === 400
-						? 'Invalid username or password'
-						: 'Login failed. Please try again.';
+				const errorMessage = getAuthErrorMessage(
+					error,
+					'Login failed. Please try again.'
+				);
 
 				update((state) => ({
 					...state,
@@ -292,10 +292,10 @@ export function createAuthStore(): AuthStore {
 
 				return { success: true };
 			} catch (error: any) {
-				const errorMessage =
-					error?.response?.status === 404
-						? 'User not found or no passkeys registered'
-						: error?.message || 'Passkey login failed. Please try again.';
+				const errorMessage = getAuthErrorMessage(
+					error,
+					error?.message || 'Passkey login failed. Please try again.'
+				);
 
 				update((state) => ({
 					...state,
