@@ -42,6 +42,7 @@
 	let currentTitle = $derived(pageTitles[stripBase($page.url.pathname)] || 'Time Tracker');
 	const activeTimerQuery = useActiveTimer();
 	const isTimerRunning = $derived(!!activeTimerQuery.data);
+	const activeTimerTitle = $derived(activeTimerQuery.data?.title ?? 'Timer');
 
 	// --- Tauri window plumbing -----------------------------------------
 	let isTauri = $state(false);
@@ -205,10 +206,10 @@
 	<!-- Left: brand + page title (hamburger is desktop-only via the sidebar) -->
 	<div class="flex min-w-0 items-center gap-2.5">
 		<div
-			class="flex h-9 w-9 shrink-0 items-center justify-center overflow-visible"
-			title={isTimerRunning ? 'Timer running' : 'Time Tracker'}
+			class="flex h-9 w-9 shrink-0 items-center justify-center overflow-visible lg:hidden"
+			title="Time Tracker"
 		>
-			<BrandMark size={36} running={isTimerRunning} />
+			<BrandMark size={36} />
 		</div>
 
 		<!-- Current page name (in Tauri this replaces the static window title) -->
@@ -224,6 +225,22 @@
 
 	<!-- Right: live status cluster -->
 	<div class="flex shrink-0 items-center gap-2">
+		{#if isTimerRunning}
+			<span
+				class="recording-pill hidden items-center gap-1.5 rounded-full border border-error/30 bg-error/10 px-2.5 py-1 lg:flex"
+				title="Timer running: {activeTimerTitle}"
+				aria-live="polite"
+			>
+				<span class="relative flex h-2 w-2 shrink-0" aria-hidden="true">
+					<span
+						class="recording-ping absolute inline-flex h-full w-full rounded-full bg-error opacity-75"
+					></span>
+					<span class="relative inline-flex h-2 w-2 rounded-full bg-error"></span>
+				</span>
+				<span class="text-xs font-medium text-error">Timer running</span>
+			</span>
+		{/if}
+
 		<!-- Network status -->
 		<span
 			class="flex items-center gap-1.5 rounded-full border border-base-300/60 bg-base-200/60 px-2.5 py-1"
@@ -316,6 +333,24 @@
 </nav>
 
 <style>
+	.recording-ping {
+		animation: recording-ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+	}
+
+	@keyframes recording-ping {
+		75%,
+		100% {
+			transform: scale(2);
+			opacity: 0;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.recording-ping {
+			animation: none;
+		}
+	}
+
 	/* Touch/pen drag on Windows (custom titlebar only). The `app-region` rule
 	lives in app.css — it's a Tauri/WinUI-specific property that the CSS
 	language service flags inside component style blocks. */

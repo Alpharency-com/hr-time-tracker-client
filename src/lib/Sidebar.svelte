@@ -17,7 +17,6 @@
 	import { onMount } from 'svelte';
 	import { generateDicebearAvatar } from './utils';
 	import { prefetchRoute } from '$lib/queries/prefetch';
-	import { useActiveTimer } from '$lib/queries/timeEntries';
 	import { addToast } from '$lib/toast';
 
 	interface User {
@@ -30,9 +29,6 @@
 	// Sidebar state - using the persistent store
 	let isCollapsed = $state(get(sidebarCollapsed));
 
-	// Active timer — when a timer is running, the brand clock spins slowly.
-	const activeTimerQuery = useActiveTimer();
-	const isTimerRunning = $derived(!!activeTimerQuery.data);
 	let isMobile = $state(typeof window !== 'undefined' ? window.innerWidth < 1024 : false);
 	let effectiveCollapsed = $derived(isMobile ? false : isCollapsed);
 
@@ -532,16 +528,16 @@
 						title="Expand sidebar"
 						aria-label="Expand sidebar"
 					>
-						<BrandMark size={40} running={isTimerRunning} />
+						<BrandMark size={40} />
 					</button>
 				{:else}
 					<div
 						class="flex h-10 w-10 shrink-0 items-center justify-center {partyMode
 							? 'party-tile'
 							: ''}"
-						title={isTimerRunning ? 'Timer running' : 'Time Tracker'}
+						title="Time Tracker"
 					>
-						<BrandMark size={40} running={isTimerRunning} />
+						<BrandMark size={40} />
 					</div>
 				{/if}
 				<p
