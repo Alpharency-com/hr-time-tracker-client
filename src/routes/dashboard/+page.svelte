@@ -19,26 +19,26 @@
 	import { prefetchRoute } from '$lib/queries/prefetch';
 	import { queryClient } from '$lib/queryClient';
 	import { queryKeys } from '$lib/queries/keys';
-	import { createQueries } from '$lib/queries/createQueries.svelte';
+	import { createQuery } from '@tanstack/svelte-query';
 	import { timeEntries as timeEntriesApi } from '$lib/api';
 	import TagChip from '$lib/TagChip.svelte';
-	import { useStopTimerMutation } from '$lib/queries/timeEntries';
+	import { useActiveTimer, useStopTimerMutation, getTehranToday } from '$lib/queries/timeEntries';
 	import {
 		computeTotalSeconds,
 		formatDuration,
-		getEntryDurationSeconds
+		getEntryDurationSeconds,
+		DAY_LABELS_SAT_FIRST
 	} from '$lib/reports/analytics';
 
 	let showTasksModal = $state(false);
 
 	// Helper functions to get date ranges
 	/**
-	 * Gets today's date in YYYY-MM-DD format.
+	 * Gets today's date in YYYY-MM-DD format (Asia/Tehran — the server timezone).
 	 * @returns Today's date string
 	 */
 	function getTodayRange(): { start: string; end: string } {
-		const now = new Date();
-		const today = now.toISOString().split('T')[0];
+		const today = getTehranToday();
 		return {
 			start: today,
 			end: today
@@ -46,17 +46,21 @@
 	}
 
 	/**
-	 * Gets the date of Monday of the current week (local time) as YYYY-MM-DD,
-	 * used to scope the "this week" summary strip.
-	 * @returns Monday's date string
+	 * Gets the date of Saturday of the current week (local time) as YYYY-MM-DD,
+	 * used to scope the "this week" summary strip. Saturday-first matches Reports.
+	 * @returns Saturday's date string
 	 */
 	function getWeekStart(): string {
 		const now = new Date();
-		const daysSinceMonday = (now.getDay() + 6) % 7;
-		const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysSinceMonday);
-		const month = String(monday.getMonth() + 1).padStart(2, '0');
-		const day = String(monday.getDate()).padStart(2, '0');
-		return `${monday.getFullYear()}-${month}-${day}`;
+		const daysSinceSaturday = (now.getDay() + 1) % 7;
+		const saturday = new Date(
+			now.getFullYear(),
+			now.getMonth(),
+			now.getDate() - daysSinceSaturday
+		);
+		const month = String(saturday.getMonth() + 1).padStart(2, '0');
+		const day = String(saturday.getDate()).padStart(2, '0');
+		return `${saturday.getFullYear()}-${month}-${day}`;
 	}
 
 	// Server state via TanStack Query — shared cache + automatic revalidation.
@@ -65,70 +69,37 @@
 	// these queries too (via queryKeys.timeEntries.all).
 	const refreshInterval = () => ($autoRefreshEnabled ? $timerRefreshInterval || 30000 : false);
 
-	// Single observer via the vendored createQueries (see
-	// src/lib/queries/createQueries.svelte.ts for why we can't use the
-	// @tanstack/svelte-query version: it builds its QueriesObserver inside a
-	// `$derived`, which crashes with state_unsafe_mutation once SyncIndicator's
-	// useIsFetching subscribes to the query cache). Same keys/shapes, so
-	// prefetch + invalidation still hit the same cache entries.
-	const [todayQuery, recentQuery, weekQuery, activeQuery] = createQueries(() => {
-		const todayRange = getTodayRange();
-		const weekStart = getWeekStart();
+	// One plain createQuery per query (same keys/shapes as prefetch, so cache
+	// entries are shared). The vendored createQueries was destructured into
+	// consts, which froze the first (pending) result on a cold start — the page
+	// only filled in after a remount with a warm cache.
+	const todayQuery = createQuery(() => {
+		const { start, end } = getTodayRange();
+		const filters = { start_date_after_tz: start, start_date_before_tz: end, limit: 100 };
 		return {
-			queries: [
-				{
-					queryKey: queryKeys.timeEntries.filtered({
-						start_date_after_tz: todayRange.start,
-						start_date_before_tz: todayRange.end,
-						limit: 100
-					}),
-					queryFn: () =>
-						timeEntriesApi.listWithFilters({
-							start_date_after_tz: todayRange.start,
-							start_date_before_tz: todayRange.end,
-							limit: 100
-						}),
-					refetchInterval: refreshInterval()
-				},
-				{
-					queryKey: queryKeys.timeEntries.filtered({ limit: 10 }),
-					queryFn: () => timeEntriesApi.listWithFilters({ limit: 10 }),
-					refetchInterval: refreshInterval()
-				},
-				{
-					queryKey: queryKeys.timeEntries.filtered({
-						start_date_after_tz: weekStart,
-						limit: 500
-					}),
-					queryFn: () =>
-						timeEntriesApi.listWithFilters({
-							start_date_after_tz: weekStart,
-							limit: 500
-						}),
-					refetchInterval: refreshInterval()
-				},
-				{
-					queryKey: queryKeys.timeEntries.active,
-					queryFn: () => timeEntriesApi.getCurrentActive(),
-					// Always stale: the active timer must reflect the server, so every
-					// mount/focus/reconnect refetches it instead of trusting a cached
-					// (possibly synthetic or stale) entry.
-					staleTime: 0,
-					refetchInterval: refreshInterval()
-				}
-			]
+			queryKey: queryKeys.timeEntries.filtered(filters),
+			queryFn: () => timeEntriesApi.listWithFilters(filters),
+			refetchInterval: refreshInterval()
 		};
 	});
+	const recentQuery = createQuery(() => ({
+		queryKey: queryKeys.timeEntries.filtered({ limit: 10 }),
+		queryFn: () => timeEntriesApi.listWithFilters({ limit: 10 }),
+		refetchInterval: refreshInterval()
+	}));
+	const weekQuery = createQuery(() => {
+		const filters = { start_date_after_tz: getWeekStart(), limit: 500 };
+		return {
+			queryKey: queryKeys.timeEntries.filtered(filters),
+			queryFn: () => timeEntriesApi.listWithFilters(filters),
+			refetchInterval: refreshInterval()
+		};
+	});
+	const activeQuery = useActiveTimer(() => ({ refetchInterval: refreshInterval() }));
 
-	let todayEntries = $derived<TimeEntry[]>(
-		(todayQuery.data as PaginatedTimeEntries | undefined)?.results ?? []
-	);
-	let recentEntries = $derived<TimeEntry[]>(
-		(recentQuery.data as PaginatedTimeEntries | undefined)?.results.slice(0, 5) ?? []
-	);
-	let weekEntries = $derived<TimeEntry[]>(
-		(weekQuery.data as PaginatedTimeEntries | undefined)?.results ?? []
-	);
+	let todayEntries = $derived<TimeEntry[]>(todayQuery.data?.results ?? []);
+	let recentEntries = $derived<TimeEntry[]>(recentQuery.data?.results.slice(0, 5) ?? []);
+	let weekEntries = $derived<TimeEntry[]>(weekQuery.data?.results ?? []);
 	let weekTotalSeconds = $derived(computeTotalSeconds(weekEntries));
 	let weekTopProject = $derived<string>(
 		(() => {
@@ -152,15 +123,15 @@
 		(() => {
 			const buckets = [0, 0, 0, 0, 0, 0, 0];
 			for (const entry of weekEntries) {
-				const dow = (new Date(entry.start_time).getDay() + 6) % 7; // Mon=0
+				const dow = (new Date(entry.start_time).getDay() + 1) % 7; // Sat=0
 				buckets[dow] += getEntryDurationSeconds(entry);
 			}
 			return buckets;
 		})()
 	);
 	let weekMaxDay = $derived(Math.max(0, ...weekDayTotals));
-	const weekdayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-	let activeEntry = $derived<TimeEntry | null>((activeQuery.data as TimeEntry | undefined) ?? null);
+	const weekdayLabels = DAY_LABELS_SAT_FIRST;
+	let activeEntry = $derived<TimeEntry | null>(activeQuery.data ?? null);
 	let loading = $derived(
 		todayQuery.isPending && recentQuery.isPending && weekQuery.isPending && activeQuery.isPending
 	);
@@ -256,7 +227,7 @@
 	// Enable debug mode in development
 </script>
 
-<div class="container mx-auto p-4 lg:p-8">
+<div class="mx-auto max-w-7xl p-0 md:p-6 lg:p-8">
 	<!-- Header -->
 	<div class="mb-6">
 		<PageHeader
@@ -445,7 +416,7 @@
 						</div>
 					</div>
 
-					<!-- Mon→Sun mini bars -->
+					<!-- Sat→Fri mini bars -->
 					<div class="flex items-end gap-1 h-8 mb-5" aria-label="Hours by weekday">
 						{#each weekDayTotals as secs, i}
 							<div

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import '../app.css';
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount, onDestroy, type Component } from 'svelte';
 	import { dev, version } from '$app/environment';
 	import { page } from '$app/stores';
 	import { gotoApp, appPath } from '$lib/navigation';
@@ -17,7 +17,7 @@
 	import Navbar from '$lib/Navbar.svelte';
 	import '$lib/notifications'; // Initialize notification service
 	import { themeChange } from 'theme-change';
-	import BackgroundAnimation from '$lib/BackgroundAnimation.svelte';
+	import { skipBackground } from '$lib/backgrounds/skipBackground';
 	import logger from '$lib/logger';
 	import { network } from '$lib/network';
 	import ToastContainer from '$lib/ToastContainer.svelte';
@@ -42,6 +42,16 @@
 
 	let { children } = $props();
 	let isTauri = $state(false);
+	// Loaded on demand (the backgrounds pull in canvas/WebGL code) and skipped on
+	// phones / reduced motion — see skipBackground.
+	let Background = $state<Component | null>(null);
+	$effect(() => {
+		if ($backgroundAnimationEnabled && !$skipBackground) {
+			import('$lib/BackgroundAnimation.svelte').then((m) => (Background = m.default));
+		} else {
+			Background = null;
+		}
+	});
 	let authInitialized = $state(false);
 	let drawerCheckbox = $state<HTMLInputElement>();
 	let statsCleanup: (() => void) | null = null;
@@ -276,8 +286,8 @@
 </svelte:head>
 
 <PersistQueryClientProvider client={queryClient} persistOptions={queryPersistOptions}>
-	{#if $backgroundAnimationEnabled}
-		<BackgroundAnimation />
+	{#if Background}
+		<Background />
 	{/if}
 
 	{#if dev}
@@ -340,9 +350,7 @@
 					</div>
 				{/if}
 				<!-- Main page content -->
-				<main
-					class="flex-1 p-4 lg:p-6 pb-[calc(1rem+var(--tab-bar-height))] lg:pb-6"
-				>
+				<main class="flex-1 p-4 lg:p-6 pb-[calc(1rem+var(--tab-bar-height))] lg:pb-6">
 					{@render children()}
 				</main>
 

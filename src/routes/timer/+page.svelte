@@ -3,7 +3,6 @@
 	import { get } from 'svelte/store';
 	import { gotoApp, appPath } from '$lib/navigation';
 	import PageHeader from '$lib/PageHeader.svelte';
-	import SettingToggle from '$lib/settings/SettingToggle.svelte';
 	import { Timer as TimerIcon } from '@jis3r/icons';
 	import logger from '$lib/logger';
 	import {
@@ -452,6 +451,24 @@
 		}
 	}
 
+	/**
+	 * Slides a too-long title back and forth so it can be read in full; short
+	 * titles stay still. Re-measures whenever the title or container resizes.
+	 */
+	function marquee(node: HTMLElement) {
+		const inner = node.firstElementChild as HTMLElement;
+		const measure = () => {
+			const overflow = inner.scrollWidth - node.clientWidth;
+			node.style.setProperty('--marquee-shift', `${-Math.max(0, overflow)}px`);
+			node.dataset.overflow = overflow > 1 ? 'true' : 'false';
+		};
+		const ro = new ResizeObserver(measure);
+		ro.observe(node);
+		ro.observe(inner);
+		measure();
+		return { destroy: () => ro.disconnect() };
+	}
+
 	function formatTime(seconds: number): string {
 		const hours = Math.floor(seconds / 3600);
 		const minutes = Math.floor((seconds % 3600) / 60);
@@ -724,52 +741,72 @@
 	};
 </script>
 
-<div class="container mx-auto p-4 lg:p-8 max-w-7xl">
+{#snippet sessionTags(tags: TimeEntry['tags'])}
+	{#if tags && tags.length > 0}
+		<div class="flex flex-wrap gap-1 mt-1.5">
+			{#each tags as tag (tag.id)}
+				{#if typeof tag === 'string'}
+					<span class="badge badge-outline badge-xs">{tag}</span>
+				{:else}
+					<TagChip {tag} size="xs" />
+				{/if}
+			{/each}
+		</div>
+	{/if}
+{/snippet}
+
+<div class="mx-auto max-w-7xl p-0 md:p-6 lg:p-8">
 	<!-- Page Header -->
-	<div class="mb-8">
+	<div class="mb-6">
 		<PageHeader icon={TimerIcon} title="Timer" subtitle="Track your time with precision" />
 	</div>
 
 	{#if loadingProjects}
-		<div class="flex justify-center items-center min-h-[50vh]">
-			<span class="loading loading-spinner loading-lg"></span>
+		<div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]" aria-busy="true">
+			<div class="skeleton h-96 rounded-box"></div>
+			<div class="skeleton h-96 rounded-box"></div>
 		</div>
 	{:else if error}
 		<div class="alert alert-error mb-6">
 			<span>{error}</span>
 		</div>
 	{:else if loadingActiveEntry}
-		<div class="card bg-base-200 shadow-xl mb-8">
-			<div class="card-body">
-				<h2 class="card-title">Checking for active timer...</h2>
-				<div class="flex justify-center">
-					<span class="loading loading-spinner loading-lg"></span>
-				</div>
-			</div>
+		<div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]" aria-busy="true">
+			<div class="skeleton h-72 rounded-box"></div>
+			<div class="skeleton h-72 rounded-box"></div>
 		</div>
 	{:else}
-		<!-- Timer Section (Full Width) -->
-		<div class="mb-6">
+		<div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem] items-start">
+			<!-- Workbench: the running timer, or the start form -->
 			{#if activeEntry || isStartingTimer}
-				<div class="card bg-base-100 shadow-xl">
-					<div class="card-body items-center text-center space-y-6">
-						<!-- Status at top -->
-						<p class="text-base-content/70 text-sm font-normal leading-normal">
+				<section class="card bg-base-100 border border-base-300" aria-label="Running timer">
+					<div class="card-body gap-6 p-4 sm:p-6">
+						<p class="text-sm font-medium {activeEntry ? 'text-success' : 'text-base-content/70'}">
 							{activeEntry ? 'In Progress' : 'Starting...'}
 						</p>
 
 						{#if activeEntry}
-							<!-- Task Title (Editable) -->
-							<div class="w-full max-w-md">
+							<!-- The readout is the object this page is known by -->
+							<p
+								class="font-mono tabular-nums text-5xl min-[400px]:text-6xl sm:text-7xl lg:text-8xl font-semibold leading-none text-base-content"
+								role="timer"
+								aria-label="Elapsed time"
+							>
+								{formatTime(elapsed)}
+							</p>
+
+							<div class="space-y-3 max-w-2xl">
+								<!-- Task Title (Editable) -->
 								{#if isEditingTitle}
 									<div class="flex items-center gap-2">
 										<input
 											type="text"
 											bind:value={editedTitle}
-											class="input input-bordered input-lg text-center text-xl font-bold flex-1 {isSavingEdit
+											class="input input-bordered input-lg text-xl font-semibold flex-1 min-w-0 {isSavingEdit
 												? 'opacity-50 cursor-wait'
 												: ''}"
 											placeholder="Task title"
+											aria-label="Task title"
 											disabled={isSavingEdit}
 											onkeydown={(e) => {
 												if (e.key === 'Enter') saveTitle();
@@ -780,11 +817,18 @@
 											class="btn btn-primary btn-circle"
 											onclick={saveTitle}
 											disabled={isSavingEdit || !editedTitle.trim()}
+											aria-label="Save title"
 										>
 											{#if isSavingEdit}
 												<span class="loading loading-spinner loading-sm"></span>
 											{:else}
-												<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<svg
+													class="w-5 h-5"
+													fill="none"
+													stroke="currentColor"
+													viewBox="0 0 24 24"
+													aria-hidden="true"
+												>
 													<path
 														stroke-linecap="round"
 														stroke-linejoin="round"
@@ -800,7 +844,13 @@
 											disabled={isSavingEdit}
 											aria-label="Cancel editing"
 										>
-											<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<svg
+												class="w-5 h-5"
+												fill="none"
+												stroke="currentColor"
+												viewBox="0 0 24 24"
+												aria-hidden="true"
+											>
 												<path
 													stroke-linecap="round"
 													stroke-linejoin="round"
@@ -811,39 +861,41 @@
 										</button>
 									</div>
 								{:else}
-									<div class="flex items-center justify-center gap-2">
-										<h2 class="text-xl font-bold text-base-content">{activeEntry.title}</h2>
+									<div class="flex items-center justify-between gap-3 min-w-0">
+										<h2
+											class="marquee min-w-0 flex-1 overflow-hidden text-xl sm:text-2xl font-semibold text-base-content"
+											title={activeEntry.title}
+											use:marquee
+										>
+											<span class="marquee-inner inline-block whitespace-nowrap">{activeEntry.title}</span>
+										</h2>
 										{#if $network.isOnline}
 											<button
-												class="btn btn-ghost btn-sm btn-circle"
+												class="btn btn-outline btn-sm shrink-0"
 												onclick={startEditingTitle}
 												title="Edit title"
 												aria-label="Edit title"
 											>
-												<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-													<path
-														stroke-linecap="round"
-														stroke-linejoin="round"
-														stroke-width="2"
-														d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-													></path>
-												</svg>
+												Edit
 											</button>
 										{/if}
 									</div>
 								{/if}
-							</div>
 
-							<!-- Description (Editable) -->
-							<div class="w-full max-w-md mt-2">
+								{#if activeEntry.project}
+									<p class="text-sm text-base-content/70">{activeEntry.project}</p>
+								{/if}
+
+								<!-- Description (Editable) -->
 								{#if isEditingDescription}
 									<div class="flex flex-col gap-2">
 										<textarea
 											bind:value={editedDescription}
-											class="textarea textarea-bordered text-center {isSavingEdit
+											class="textarea textarea-bordered {isSavingEdit
 												? 'opacity-50 cursor-wait'
 												: ''}"
 											placeholder="Add a description..."
+											aria-label="Description"
 											rows="2"
 											disabled={isSavingEdit}
 											onkeydown={(e) => {
@@ -851,7 +903,7 @@
 												if (e.key === 'Escape') cancelEditing();
 											}}
 										></textarea>
-										<div class="flex justify-center gap-2">
+										<div class="flex gap-2">
 											<button
 												class="btn btn-primary btn-sm"
 												onclick={saveDescription}
@@ -860,19 +912,6 @@
 												{#if isSavingEdit}
 													<span class="loading loading-spinner loading-sm"></span>
 												{:else}
-													<svg
-														class="w-4 h-4 mr-1"
-														fill="none"
-														stroke="currentColor"
-														viewBox="0 0 24 24"
-													>
-														<path
-															stroke-linecap="round"
-															stroke-linejoin="round"
-															stroke-width="2"
-															d="M5 13l4 4L19 7"
-														></path>
-													</svg>
 													Save
 												{/if}
 											</button>
@@ -886,37 +925,28 @@
 										</div>
 									</div>
 								{:else}
-									<div class="flex items-center justify-center gap-2">
+									<div class="flex items-center justify-between gap-3">
 										{#if activeEntry.description}
-											<p class="text-sm text-base-content/60">{activeEntry.description}</p>
+											<p class="text-sm text-base-content/70">{activeEntry.description}</p>
 										{:else}
-											<p class="text-sm text-base-content/40 italic">No description</p>
+											<p class="text-sm text-base-content/60">No description</p>
 										{/if}
 										{#if $network.isOnline}
 											<button
-												class="btn btn-ghost btn-xs btn-circle"
+												class="btn btn-outline btn-sm shrink-0"
 												onclick={startEditingDescription}
 												title="Edit description"
 												aria-label="Edit description"
 											>
-												<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-													<path
-														stroke-linecap="round"
-														stroke-linejoin="round"
-														stroke-width="2"
-														d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-													></path>
-												</svg>
+												Edit
 											</button>
 										{/if}
 									</div>
 								{/if}
-							</div>
 
-							<!-- Active Entry Tags (editable while running) -->
-							<div class="w-full max-w-md">
+								<!-- Active Entry Tags (editable while running) -->
 								{#if isEditingTags}
-									<div class="rounded-xl border border-base-300 bg-base-200/40 p-3">
+									<div class="rounded-box border border-base-300 bg-base-200/40 p-3">
 										<TagPicker bind:value={selectedTagIds} allowCreate={false} />
 										{#if tagSaveError}
 											<p class="text-xs text-error mt-2">{tagSaveError}</p>
@@ -935,9 +965,9 @@
 										</div>
 									</div>
 								{:else}
-									<div class="flex items-center justify-center gap-2">
+									<div class="flex items-center justify-between gap-3">
 										{#if activeEntry.tags && activeEntry.tags.length > 0}
-											<div class="flex flex-wrap justify-center gap-1.5">
+											<div class="flex flex-wrap gap-1.5">
 												{#each activeEntry.tags as tag (tag.id)}
 													{#if typeof tag === 'string'}
 														<span class="badge badge-outline badge-xs">{tag}</span>
@@ -947,417 +977,320 @@
 												{/each}
 											</div>
 										{:else}
-											<p class="text-sm text-base-content/40 italic">No tags</p>
+											<p class="text-sm text-base-content/60">No tags</p>
 										{/if}
 										{#if $network.isOnline}
 											<button
-												class="btn btn-ghost btn-xs btn-circle"
+												class="btn btn-outline btn-sm shrink-0"
 												onclick={startEditTags}
 												title="Edit tags"
 												aria-label="Edit tags"
 											>
-												<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-													<path
-														stroke-linecap="round"
-														stroke-linejoin="round"
-														stroke-width="2"
-														d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-													></path>
-												</svg>
+												Edit
 											</button>
 										{/if}
 									</div>
 								{/if}
-							</div>
 
-							<!-- Edit Error Message -->
-							{#if editError}
-								<div class="w-full max-w-md">
-									<div class="alert alert-error">
-										<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-											<path
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												stroke-width="2"
-												d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-											></path>
-										</svg>
-										<span>{editError}</span>
+								{#if editError}
+									<div class="alert alert-error py-2" role="alert">
+										<span class="text-sm">{editError}</span>
 									</div>
-								</div>
-							{/if}
-
-							<!-- Big Timer Display in the center -->
-							<div class="py-4">
-								<h1
-									class="text-5xl lg:text-6xl font-bold tracking-tighter leading-tight text-base-content"
-								>
-									{formatTime(elapsed)}
-								</h1>
+								{/if}
 							</div>
 
-							<!-- Big Stop Button at the bottom -->
-							<div class="flex flex-col items-center mt-4 gap-2">
+							<div class="flex flex-wrap items-center gap-3 pt-4 border-t border-base-300">
 								<button
-									class="btn btn-lg rounded-full bg-red-500 hover:bg-red-600 text-white border-none text-lg font-bold"
+									class="btn btn-error btn-lg"
 									onclick={onStopTimer}
 									disabled={!$network.isOnline}
 								>
-									<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											stroke-width="2"
-											d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-										></path>
-										<path
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											stroke-width="2"
-											d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"
-										></path>
+									<svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+										<rect x="6" y="6" width="12" height="12" rx="2" />
 									</svg>
 									Stop
 								</button>
+								<p class="text-sm text-base-content/70">
+									Started {new Date(activeEntry.start_time).toLocaleTimeString([], {
+										hour: '2-digit',
+										minute: '2-digit'
+									})}
+								</p>
 								{#if !$network.isOnline}
-									<div class="text-sm text-warning font-medium">
-										Cannot stop timer while offline
-									</div>
+									<p class="text-sm text-warning font-medium">Cannot stop timer while offline</p>
 								{/if}
 							</div>
 						{:else if isStartingTimer}
-							<!-- Starting Timer State -->
-							<div class="py-4">
+							<div class="py-6 flex items-center gap-3">
 								<span class="loading loading-spinner loading-lg text-primary"></span>
+								<p class="text-base-content/70">Starting timer...</p>
 							</div>
-							<p class="text-base-content/70">Starting timer...</p>
 						{/if}
 					</div>
-				</div>
+				</section>
 			{:else}
-				<!-- Compact Start Form when idle (Full Width) -->
-				<div class="card bg-base-100 shadow-xl">
-					<div class="card-body">
-						<div class="text-center mb-6">
-							<h2 class="text-2xl font-bold text-base-content mb-2">Ready to start tracking?</h2>
+				<section class="card bg-base-100 border border-base-300" aria-label="Start a timer">
+					<form onsubmit={onStartTimer} class="card-body gap-5 p-4 sm:p-6">
+						<div>
+							<h2 class="text-2xl font-semibold text-base-content">Ready to start tracking?</h2>
 							<p class="text-base-content/70">Start a new timer session</p>
 						</div>
 
-						<form onsubmit={onStartTimer} class="space-y-6">
-							<div class="form-control">
-								<label class="label" for="title">
-									<span class="label-text">Task Title</span>
-								</label>
-								<input
-									id="title"
-									bind:value={title}
-									type="text"
-									placeholder="What are you working on?"
-									class="input input-bordered"
-									required
-									onfocus={() => (titleInputFocused = true)}
-									onblur={() => (titleInputFocused = false)}
-								/>
+						<div class="form-control">
+							<label class="label" for="title">
+								<span class="label-text">Task Title</span>
+							</label>
+							<input
+								id="title"
+								bind:value={title}
+								type="text"
+								placeholder="What are you working on?"
+								class="input input-bordered input-lg w-full"
+								required
+								onfocus={() => (titleInputFocused = true)}
+								onblur={() => (titleInputFocused = false)}
+							/>
 
-								{#if $network.isOnline && suggestionChips.length > 0}
-									<div class="flex flex-wrap items-center gap-1.5 mt-2">
-										<span class="text-xs text-base-content/50">Suggestions:</span>
-										{#each suggestionChips as chip, i (chip.kind + ':' + chip.id)}
-											{#if chip.kind === 'project'}
-												<button
-													type="button"
-													class="inline-flex items-center gap-1 rounded-full border border-base-300 bg-base-200/60 px-2.5 py-0.5 text-xs font-medium text-base-content/80 transition-all hover:border-primary/60 hover:text-primary {selectedProject ===
-													chip.id
-														? 'border-primary bg-primary/10 text-primary'
-														: ''} {suggestionFocus === i ? 'ring-2 ring-primary/70' : ''}"
-													onclick={() => applyProjectSuggestion(chip.id)}
+							{#if $network.isOnline && suggestionChips.length > 0}
+								<div class="flex flex-wrap items-center gap-1.5 mt-2">
+									<span class="text-xs text-base-content/60">Suggestions:</span>
+									{#each suggestionChips as chip, i (chip.kind + ':' + chip.id)}
+										{#if chip.kind === 'project'}
+											<button
+												type="button"
+												class="inline-flex items-center gap-1 rounded-full border border-base-300 bg-base-200/60 px-2.5 py-0.5 text-xs font-medium text-base-content/80 transition-colors hover:border-primary/60 hover:text-primary {selectedProject ===
+												chip.id
+													? 'border-primary bg-primary/10 text-primary'
+													: ''} {suggestionFocus === i ? 'ring-2 ring-primary/70' : ''}"
+												onclick={() => applyProjectSuggestion(chip.id)}
+											>
+												<svg
+													class="w-3 h-3"
+													fill="none"
+													stroke="currentColor"
+													viewBox="0 0 24 24"
+													aria-hidden="true"
 												>
-													<svg
-														class="w-3 h-3"
-														fill="none"
-														stroke="currentColor"
-														viewBox="0 0 24 24"
-													>
-														<path
-															stroke-linecap="round"
-															stroke-linejoin="round"
-															stroke-width="2"
-															d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-														></path>
-													</svg>
-													{chip.kind === 'project' ? titleSuggestions?.projectName : ''}
-												</button>
-											{:else}
-												{@const tag = chip.id !== null ? tagById.get(chip.id) : undefined}
-												{#if tag}
-													<button
-														type="button"
-														onclick={() => toggleTagSuggestion(chip.id!)}
-														class="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium transition-all {suggestionFocus ===
-														i
-															? 'ring-2 ring-primary/70'
-															: ''}"
-														style="background:{tag.color}{selectedTags.includes(chip.id!)
-															? '4d'
-															: '22'};color:{tag.color};border:1px solid {tag.color}55;"
-													>
-														{tag.title}
-													</button>
-												{/if}
-											{/if}
-										{/each}
-										<span
-											class="ml-auto inline-flex items-center gap-1 whitespace-nowrap text-[10px] text-base-content/40"
-											aria-label="Keyboard shortcuts: arrow keys to select a suggestion, Enter to apply, Escape to clear"
-										>
-											<kbd class="kbd kbd-xs bg-base-200 px-1 text-base-content/60">←</kbd>
-											<kbd class="kbd kbd-xs bg-base-200 px-1 text-base-content/60">→</kbd>
-											<span>select</span>
-											<kbd class="kbd kbd-xs bg-base-200 px-1 text-base-content/60">Enter</kbd>
-											<span>apply</span>
-											<kbd class="kbd kbd-xs bg-base-200 px-1 text-base-content/60">Esc</kbd>
-											<span>clear</span>
-										</span>
-									</div>
-								{/if}
-							</div>
-
-							<!-- Project Selector -->
-							<div class="form-control">
-								<label class="label" for="project-picker-trigger">
-									<span class="label-text">Project</span>
-								</label>
-								<ProjectPicker
-									bind:value={selectedProject}
-									projects={projectsList}
-									onOpen={onProjectDropdownOpen}
-									inputId="project-picker-trigger"
-								/>
-							</div>
-
-							<!-- Tags (optional) -->
-							<div class="form-control">
-								<div class="label pb-1">
-									<span class="label-text font-semibold">Tags (optional)</span>
-									{#if selectedTags.length > 0}
-										<span class="badge badge-sm badge-ghost font-normal"
-											>{selectedTags.length} selected</span
-										>
-									{/if}
-								</div>
-								<div id="timer-tags" class="rounded-xl border border-base-300 bg-base-200/40 p-2.5">
-									<TagPicker bind:value={selectedTags} />
-								</div>
-							</div>
-
-							<!-- Description (optional) -->
-							<div class="form-control">
-								<label class="label" for="description">
-									<span class="label-text">Description (optional)</span>
-								</label>
-								<textarea
-									id="description"
-									bind:value={description}
-									placeholder="Additional details..."
-									class="textarea textarea-bordered"
-									rows="3"
-								></textarea>
-							</div>
-
-							<!-- Custom Start Time Section -->
-							<div class="form-control">
-								<span class="label-text text-base-content/70 label">Start Time</span>
-
-								<!-- Toggle Switch -->
-								<div class="flex items-center gap-3 mb-3">
-									<span
-										class="text-sm {!useCustomStartTime ? 'font-medium' : 'text-base-content/60'}"
-										>Start from now</span
-									>
-									<SettingToggle
-										checked={useCustomStartTime}
-										label="Toggle between start from now and custom start time"
-										onChange={() => toggleCustomStartTime()}
-									/>
-									<button
-										type="button"
-										class="text-sm {useCustomStartTime ? 'font-medium' : 'text-base-content/60'}"
-										onclick={toggleCustomStartTime}
-									>
-										Custom time
-									</button>
-								</div>
-
-								{#if useCustomStartTime}
-									<div class="space-y-4 p-4 bg-base-200 rounded-lg">
-										<!-- Minutes Slider -->
-										<div class="form-control">
-											<div class="flex justify-between items-center mb-2">
-												<span class="label-text text-sm font-medium">Start timer</span>
-												<span class="text-lg font-bold text-primary"
-													>{sliderMinutesAgo} min ago</span
-												>
-											</div>
-											<input
-												type="range"
-												min="0"
-												max={MAX_START_TIME_PAST_MINUTES}
-												value={sliderMinutesAgo}
-												oninput={onSliderChange}
-												class="range range-primary"
-												step="1"
-											/>
-											<div class="flex justify-between text-xs text-base-content/50 mt-1">
-												<span>Now</span>
-												<span>{MAX_START_TIME_PAST_MINUTES} min ago</span>
-											</div>
-										</div>
-
-										<!-- Quick Select Buttons -->
-										<div class="form-control">
-											<span class="label-text text-xs label mb-2">Quick select</span>
-											<div class="flex flex-wrap gap-2">
-												<button
-													type="button"
-													class="btn btn-xs btn-outline"
-													onclick={() => setStartTimeMinutesAgo(0)}
-												>
-													Now
-												</button>
-												<button
-													type="button"
-													class="btn btn-xs btn-outline"
-													onclick={() => setStartTimeMinutesAgo(15)}
-												>
-													15 min
-												</button>
-												<button
-													type="button"
-													class="btn btn-xs btn-outline"
-													onclick={() => setStartTimeMinutesAgo(30)}
-												>
-													30 min
-												</button>
-												<button
-													type="button"
-													class="btn btn-xs btn-outline"
-													onclick={() => setStartTimeMinutesAgo(45)}
-												>
-													45 min
-												</button>
-												<button
-													type="button"
-													class="btn btn-xs btn-outline"
-													onclick={() => setStartTimeMinutesAgo(60)}
-												>
-													60 min
-												</button>
-											</div>
-										</div>
-
-										<!-- Selected Time Display -->
-										{#if customStartTime}
-											<div class="text-center text-sm text-base-content/70">
-												Timer will start from <span class="font-semibold text-base-content"
-													>{customStartTime.toLocaleTimeString([], {
-														hour: '2-digit',
-														minute: '2-digit',
-														second: '2-digit'
-													})}</span
-												>
-											</div>
-										{/if}
-
-										<!-- Validation Feedback -->
-										{#if startTimeValidationError}
-											<div class="alert alert-error py-2">
-												<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 													<path
 														stroke-linecap="round"
 														stroke-linejoin="round"
 														stroke-width="2"
-														d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+														d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
 													></path>
 												</svg>
-												<span class="text-sm">{startTimeValidationError}</span>
-											</div>
+												{chip.kind === 'project' ? titleSuggestions?.projectName : ''}
+											</button>
+										{:else}
+											{@const tag = chip.id !== null ? tagById.get(chip.id) : undefined}
+											{#if tag}
+												<button
+													type="button"
+													onclick={() => toggleTagSuggestion(chip.id!)}
+													class="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors {suggestionFocus ===
+													i
+														? 'ring-2 ring-primary/70'
+														: ''}"
+													style="background:{tag.color}{selectedTags.includes(chip.id!)
+														? '4d'
+														: '22'};color:{tag.color};border:1px solid {tag.color}55;"
+												>
+													{tag.title}
+												</button>
+											{/if}
 										{/if}
-									</div>
-								{/if}
-							</div>
-
-							<!-- Centered Start Button with Play Icon -->
-							<div class="flex flex-col items-center gap-2">
-								<button
-									class="btn btn-primary btn-lg rounded-full text-xl px-8"
-									type="submit"
-									disabled={!$network.isOnline || !!startTimeValidationError}
-								>
-									<span class="mr-2" aria-hidden="true">
-										<svg class="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
-											<polygon points="6 3 20 12 6 21 6 3" />
-										</svg>
+									{/each}
+									<span
+										class="ml-auto hidden sm:inline-flex items-center gap-1 whitespace-nowrap text-xs text-base-content/60"
+										aria-label="Keyboard shortcuts: arrow keys to select a suggestion, Enter to apply, Escape to clear"
+									>
+										<kbd class="kbd kbd-xs">←</kbd>
+										<kbd class="kbd kbd-xs">→</kbd>
+										<span>select</span>
+										<kbd class="kbd kbd-xs">Enter</kbd>
+										<span>apply</span>
+										<kbd class="kbd kbd-xs">Esc</kbd>
+										<span>clear</span>
 									</span>
-									Start Timer
-								</button>
-								{#if !$network.isOnline}
-									<div class="text-sm text-warning font-medium">
-										Cannot start timer while offline
-									</div>
+								</div>
+							{/if}
+						</div>
+
+						<div class="form-control">
+							<label class="label" for="project-picker-trigger">
+								<span class="label-text">Project</span>
+							</label>
+							<ProjectPicker
+								bind:value={selectedProject}
+								projects={projectsList}
+								onOpen={onProjectDropdownOpen}
+								inputId="project-picker-trigger"
+							/>
+						</div>
+
+						<div class="form-control">
+							<div class="label pb-1">
+								<span class="label-text">Tags (optional)</span>
+								{#if selectedTags.length > 0}
+									<span class="badge badge-sm badge-ghost font-normal"
+										>{selectedTags.length} selected</span
+									>
 								{/if}
 							</div>
-						</form>
-					</div>
-				</div>
-			{/if}
-		</div>
+							<div id="timer-tags" class="rounded-box border border-base-300 bg-base-200/40 p-2.5">
+								<TagPicker bind:value={selectedTags} />
+							</div>
+						</div>
 
-		<!-- Today's Timers Section (Full Width, Below Timer) -->
-		<div>
-			<div class="card bg-base-100 shadow-xl">
-				<div class="card-body">
-					<h3 class="text-lg font-medium text-base-content mb-4">Today's Sessions</h3>
+						<div class="form-control">
+							<label class="label" for="description">
+								<span class="label-text">Description (optional)</span>
+							</label>
+							<textarea
+								id="description"
+								bind:value={description}
+								placeholder="Additional details..."
+								class="textarea textarea-bordered w-full"
+								rows="2"
+							></textarea>
+						</div>
+
+						<!-- Start time: now, or backdate up to an hour -->
+						<div class="form-control">
+							<span class="label"><span class="label-text">Start Time</span></span>
+							<div class="join w-fit" role="group" aria-label="Start time">
+								<button
+									type="button"
+									class="btn btn-sm join-item {!useCustomStartTime ? 'btn-primary' : 'btn-outline'}"
+									aria-pressed={!useCustomStartTime}
+									onclick={() => useCustomStartTime && toggleCustomStartTime()}
+								>
+									Start from now
+								</button>
+								<button
+									type="button"
+									class="btn btn-sm join-item {useCustomStartTime ? 'btn-primary' : 'btn-outline'}"
+									aria-pressed={useCustomStartTime}
+									onclick={() => !useCustomStartTime && toggleCustomStartTime()}
+								>
+									Custom time
+								</button>
+							</div>
+
+							{#if useCustomStartTime}
+								<div class="space-y-4 p-4 mt-3 bg-base-200 rounded-box">
+									<div>
+										<div class="flex justify-between items-baseline mb-2">
+											<label for="start-offset" class="label-text text-sm font-medium"
+												>Start timer</label
+											>
+											<span class="text-lg font-semibold text-primary tabular-nums"
+												>{sliderMinutesAgo} min ago</span
+											>
+										</div>
+										<input
+											id="start-offset"
+											type="range"
+											min="0"
+											max={MAX_START_TIME_PAST_MINUTES}
+											value={sliderMinutesAgo}
+											oninput={onSliderChange}
+											class="range range-primary range-sm w-full"
+											step="1"
+										/>
+										<div class="flex justify-between text-xs text-base-content/60 mt-1">
+											<span>Now</span>
+											<span>{MAX_START_TIME_PAST_MINUTES} min ago</span>
+										</div>
+									</div>
+
+									<div class="flex flex-wrap items-center gap-2">
+										<span class="text-xs text-base-content/70">Quick select</span>
+										{#each [0, 15, 30, 45, 60] as minutes}
+											<button
+												type="button"
+												class="btn btn-xs {sliderMinutesAgo === minutes
+													? 'btn-primary'
+													: 'btn-outline'}"
+												onclick={() => setStartTimeMinutesAgo(minutes)}
+											>
+												{minutes === 0 ? 'Now' : `${minutes} min`}
+											</button>
+										{/each}
+									</div>
+
+									{#if customStartTime}
+										<p class="text-sm text-base-content/70">
+											Timer will start from <span
+												class="font-semibold text-base-content tabular-nums"
+												>{customStartTime.toLocaleTimeString([], {
+													hour: '2-digit',
+													minute: '2-digit',
+													second: '2-digit'
+												})}</span
+											>
+										</p>
+									{/if}
+
+									{#if startTimeValidationError}
+										<div class="alert alert-error py-2" role="alert">
+											<span class="text-sm">{startTimeValidationError}</span>
+										</div>
+									{/if}
+								</div>
+							{/if}
+						</div>
+
+						<div class="flex flex-wrap items-center gap-3 pt-4 border-t border-base-300">
+							<button
+								class="btn btn-primary btn-lg"
+								type="submit"
+								disabled={!$network.isOnline || !!startTimeValidationError}
+							>
+								<svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+									<polygon points="6 3 20 12 6 21 6 3" />
+								</svg>
+								Start Timer
+							</button>
+							{#if !$network.isOnline}
+								<p class="text-sm text-warning font-medium">Cannot start timer while offline</p>
+							{/if}
+						</div>
+					</form>
+				</section>
+			{/if}
+
+			<!-- Today's sessions ledger -->
+			<aside class="card bg-base-100 border border-base-300" aria-label="Today's sessions">
+				<div class="card-body gap-3 p-0">
+					<h3 class="text-base font-semibold px-5 pt-5">Today's Sessions</h3>
 					{#if loadingTodaySessions}
-						<div class="flex justify-center py-8">
-							<span class="loading loading-spinner loading-lg"></span>
+						<div class="px-5 pb-5 space-y-3" aria-busy="true">
+							{#each Array(3) as _}
+								<div class="skeleton h-14 w-full"></div>
+							{/each}
 						</div>
 					{:else if todaySessions.length > 0}
-						<div class="space-y-4">
+						<ul class="divide-y divide-base-300">
 							{#each todaySessions as session (session.id)}
-								<div
-									class="border border-base-300 rounded-lg p-4 hover:bg-base-200 transition-colors"
-								>
-									<div class="flex justify-between items-start">
-										<div class="flex-1 min-w-0">
+								<li class="px-5 py-3 hover:bg-base-200/60 transition-colors">
+									<div class="flex justify-between items-start gap-3">
+										<div class="min-w-0">
 											<h4 class="font-medium text-base-content truncate">{session.title}</h4>
 											<p class="text-sm text-base-content/70 truncate">{session.project}</p>
 											{#if session.description}
-												<p class="text-sm text-base-content/60 mt-1 truncate">
-													{session.description}
-												</p>
+												<p class="text-sm text-base-content/60 truncate">{session.description}</p>
 											{/if}
-											{#if session.tags && session.tags.length > 0}
-												<div class="flex flex-wrap gap-1 mt-2">
-													{#each session.tags as tag (tag.id)}
-														{#if typeof tag === 'string'}
-															<span class="badge badge-outline badge-xs">{tag}</span>
-														{:else}
-															<TagChip {tag} size="xs" />
-														{/if}
-													{/each}
-												</div>
-											{/if}
+											{@render sessionTags(session.tags)}
 										</div>
-										<div class="text-right ml-4">
-											<div class="text-sm text-base-content/90 font-mono">
+										<div class="text-right shrink-0">
+											<div class="text-sm font-mono tabular-nums text-base-content">
 												{session.duration ? formatTime(parseFloat(session.duration)) : '00:00:00'}
 											</div>
-											<div class="text-xs text-base-content/60 mt-1">
+											<div class="text-xs text-base-content/60 mt-0.5 tabular-nums">
 												{new Date(session.start_time).toLocaleTimeString([], {
 													hour: '2-digit',
 													minute: '2-digit'
-												})} -
-												{session.end_time
+												})} - {session.end_time
 													? new Date(session.end_time).toLocaleTimeString([], {
 															hour: '2-digit',
 															minute: '2-digit'
@@ -1366,19 +1299,19 @@
 											</div>
 										</div>
 									</div>
-								</div>
+								</li>
 							{/each}
-						</div>
+						</ul>
 					{:else}
-						<div class="text-center py-8">
+						<div class="px-5 pb-6">
 							<p class="text-base-content/70">No completed sessions today</p>
-							<p class="text-sm text-base-content/50 mt-2">
+							<p class="text-sm text-base-content/60 mt-1">
 								Your completed timer sessions will appear here
 							</p>
 						</div>
 					{/if}
 				</div>
-			</div>
+			</aside>
 		</div>
 	{/if}
 
@@ -1386,3 +1319,25 @@
 		<TasksModal on:close={() => (showTasksModal = false)} />
 	{/if}
 </div>
+
+<style>
+	.marquee[data-overflow='true'] .marquee-inner {
+		animation: marquee-slide 9s ease-in-out infinite alternate;
+	}
+	@keyframes marquee-slide {
+		0%,
+		15% {
+			transform: translateX(0);
+		}
+		85%,
+		100% {
+			transform: translateX(var(--marquee-shift));
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.marquee[data-overflow='true'] .marquee-inner {
+			animation: none;
+			white-space: normal;
+		}
+	}
+</style>

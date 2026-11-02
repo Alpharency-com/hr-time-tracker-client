@@ -166,7 +166,7 @@
 	}
 </script>
 
-<div class="container mx-auto p-4 lg:p-8">
+<div class="mx-auto max-w-7xl p-0 md:p-6 lg:p-8">
 	<!-- Page Header -->
 	<div class="mb-8">
 		<PageHeader icon={UserRound} title="Profile" subtitle="Manage your account information" />

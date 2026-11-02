@@ -51,6 +51,7 @@
 	import { useProjects } from '$lib/queries/timeEntries';
 	import { useTagsQuery } from '$lib/queries/tags';
 
+	import { skipBackground } from '$lib/backgrounds/skipBackground';
 	import { network, pingBaseUrl, type BaseUrlPingResult } from '$lib/network';
 	import { addToast } from '$lib/toast';
 	import { pwaNeedRefresh, pwaNativeInstall, pwaManualInstall } from '$lib/pwa/availability';
@@ -111,6 +112,12 @@
 	let versionSource = $state<'pending' | 'web' | 'desktop'>('pending');
 	let showLogoutConfirm = $state(false);
 	let isTauriApp = $state(false);
+	// Tray, autostart and the native updater only exist in the desktop shell;
+	// phones and plain browsers never see those settings.
+	const isDesktop = $derived(isTauri || isTauriApp);
+	// Behavior only holds desktop window/startup options, the background and the
+	// FPS overlay — on phones none of them apply, so the whole section goes.
+	const showBehavior = $derived(isDesktop || !$skipBackground);
 	let updateStatus = $state<
 		'idle' | 'checking' | 'available' | 'up-to-date' | 'downloading' | 'installed' | 'error'
 	>('idle');
@@ -126,9 +133,9 @@
 	let activeSection = $state('appearance');
 	const sections = $derived([
 		{ id: 'appearance', label: 'Appearance' },
-		{ id: 'behavior', label: 'Behavior' },
+		...(showBehavior ? [{ id: 'behavior', label: 'Behavior' }] : []),
 		{ id: 'data', label: 'Data & Sync' },
-		{ id: 'updates', label: 'Updates' },
+		...(isDesktop ? [{ id: 'updates', label: 'Updates' }] : []),
 		...($isAdmin ? [{ id: 'team', label: 'Team' }] : []),
 		{ id: 'about', label: 'About' }
 	]);
@@ -654,194 +661,202 @@
 			<ThemeSwatchPicker />
 		</SectionCard>
 
-		<!-- Behavior -->
-		<SectionCard
-			id="behavior"
-			icon={SlidersHorizontal}
-			title="Behavior"
-			description="Window, startup, and system behavior"
-		>
-			<p class="mb-1 mt-1 text-xs font-semibold uppercase tracking-wide text-base-content/50">
-				Window
-			</p>
-			<div class="divide-y divide-base-200">
-				<SettingRow
-					icon={Minimize2}
-					title="Minimize to tray"
-					description="Keep running in the system tray when minimized"
-				>
-					<SettingToggle
-						checked={localMinimizeToTray}
-						label="Minimize to tray"
-						onChange={(v) => {
-							localMinimizeToTray = v;
-							saveTraySettings();
-						}}
-					/>
-				</SettingRow>
-				<SettingRow
-					icon={DoorClosed}
-					title="Close to tray"
-					description="Keep running in the tray when the window is closed"
-				>
-					<SettingToggle
-						checked={localCloseToTray}
-						label="Close to tray"
-						onChange={(v) => {
-							localCloseToTray = v;
-							saveTraySettings();
-						}}
-					/>
-				</SettingRow>
-			</div>
-
-			<p class="mb-1 mt-5 text-xs font-semibold uppercase tracking-wide text-base-content/50">
-				System
-			</p>
-			<div class="divide-y divide-base-200">
-				<SettingRow
-					icon={Power}
-					title="Start with system"
-					description="Launch automatically when you sign in"
-				>
-					<SettingToggle
-						checked={localAutostart}
-						label="Start with system"
-						onChange={(v) => {
-							localAutostart = v;
-							saveAutostart();
-						}}
-					/>
-				</SettingRow>
-				<SettingRow
-					icon={Waves}
-					title="Animated background"
-					description="A subtle animated background behind the app"
-				>
-					<SettingToggle
-						checked={localBackgroundAnimation}
-						label="Animated background"
-						onChange={(v) => {
-							localBackgroundAnimation = v;
-							saveBackgroundAnimation();
-						}}
-					/>
-				</SettingRow>
-				{#if localBackgroundAnimation}
-					<SettingRow
-						icon={Waves}
-						title="Background style"
-						description="Aurora Drift · Wave · Bokeh Float · Ocean · Nebula · Lattice"
-					>
-						<div class="relative" bind:this={backgroundMenuEl}>
-							<button
-								type="button"
-								class="btn btn-sm gap-1.5 border border-base-300 bg-base-100 font-normal hover:bg-base-200"
-								aria-haspopup="listbox"
-								aria-expanded={backgroundOpen}
-								onclick={() => (backgroundOpen = !backgroundOpen)}
-							>
-								{backgroundLabel}
-								<ChevronDown
-									size={14}
-									class={backgroundOpen
-										? 'rotate-180 transition-transform'
-										: 'transition-transform'}
-								/>
-							</button>
-							{#if backgroundOpen}
-								<ul
-									role="listbox"
-									class="absolute right-0 z-30 mt-1.5 w-44 overflow-hidden rounded-xl border border-base-300 bg-base-100 p-1 shadow-xl"
-								>
-									{#each backgroundOptions as opt (opt.value)}
-										<li role="option" aria-selected={opt.value === localBackgroundStyle}>
-											<button
-												type="button"
-												class="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm {opt.value ===
-												localBackgroundStyle
-													? 'bg-primary/10 font-medium text-primary'
-													: 'text-base-content/80 hover:bg-base-200'}"
-												onclick={() => selectBackground(opt.value)}
-											>
-												{opt.label}
-												{#if opt.value === localBackgroundStyle}
-													<Check size={14} />
-												{/if}
-											</button>
-										</li>
-									{/each}
-								</ul>
-							{/if}
-						</div>
-						{#if localBackgroundStyle === 'ocean'}
-							<div
-								class="mt-2 flex max-w-[13rem] items-start gap-1.5 text-xs leading-snug text-warning"
-							>
-								<svg
-									class="mt-px h-3.5 w-3.5 shrink-0"
-									fill="none"
-									stroke="currentColor"
-									viewBox="0 0 24 24"
-								>
-									<path
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										stroke-width="2"
-										d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-									/>
-								</svg>
-								<span
-									>Heavy — real-time FFT ocean sim (~50&nbsp;MB GPU). Try a lighter style on low-end
-									machines.</span
-								>
-							</div>
-						{/if}
-					</SettingRow>
-					{#if localBackgroundStyle === 'ocean'}
+		{#if showBehavior}
+			<!-- Behavior -->
+			<SectionCard
+				id="behavior"
+				icon={SlidersHorizontal}
+				title="Behavior"
+				description={isDesktop ? 'Window, startup, and system behavior' : 'Display and performance'}
+			>
+				{#if isDesktop}
+					<p class="mb-1 mt-1 text-xs font-semibold uppercase tracking-wide text-base-content/50">
+						Window
+					</p>
+					<div class="divide-y divide-base-200">
 						<SettingRow
-							icon={Waves}
-							title="Wave character"
-							description="Calm glassy swells ↔ stormy chop"
+							icon={Minimize2}
+							title="Minimize to tray"
+							description="Keep running in the system tray when minimized"
 						>
-							<div class="w-44">
-								<input
-									type="range"
-									min="0"
-									max="1"
-									step="0.05"
-									value={localOceanCharacter}
-									oninput={(e) => {
-										localOceanCharacter = Number(e.currentTarget.value);
-										saveOceanCharacter();
-									}}
-									class="range range-primary range-xs"
-									aria-label="Wave character"
-								/>
-								<div class="flex justify-between text-xs text-base-content/50 mt-1">
-									<span>Calm</span>
-									<span>Stormy</span>
-								</div>
-							</div>
+							<SettingToggle
+								checked={localMinimizeToTray}
+								label="Minimize to tray"
+								onChange={(v) => {
+									localMinimizeToTray = v;
+									saveTraySettings();
+								}}
+							/>
+						</SettingRow>
+						<SettingRow
+							icon={DoorClosed}
+							title="Close to tray"
+							description="Keep running in the tray when the window is closed"
+						>
+							<SettingToggle
+								checked={localCloseToTray}
+								label="Close to tray"
+								onChange={(v) => {
+									localCloseToTray = v;
+									saveTraySettings();
+								}}
+							/>
+						</SettingRow>
+					</div>
+
+					<p class="mb-1 mt-5 text-xs font-semibold uppercase tracking-wide text-base-content/50">
+						System
+					</p>
+				{/if}
+				<div class="divide-y divide-base-200">
+					{#if isDesktop}
+						<SettingRow
+							icon={Power}
+							title="Start with system"
+							description="Launch automatically when you sign in"
+						>
+							<SettingToggle
+								checked={localAutostart}
+								label="Start with system"
+								onChange={(v) => {
+									localAutostart = v;
+									saveAutostart();
+								}}
+							/>
 						</SettingRow>
 					{/if}
-				{/if}
-				<SettingRow
-					icon={Gauge}
-					title="Performance stats panel"
-					description="FPS and memory overlay in the top-left"
-				>
-					<SettingToggle
-						checked={localStatsPanel}
-						label="Performance stats panel"
-						onChange={(v) => {
-							localStatsPanel = v;
-							saveStatsPanel();
-						}}
-					/>
-				</SettingRow>
-			</div>
-		</SectionCard>
+					{#if !$skipBackground}
+						<SettingRow
+							icon={Waves}
+							title="Animated background"
+							description="A subtle animated background behind the app"
+						>
+							<SettingToggle
+								checked={localBackgroundAnimation}
+								label="Animated background"
+								onChange={(v) => {
+									localBackgroundAnimation = v;
+									saveBackgroundAnimation();
+								}}
+							/>
+						</SettingRow>
+						{#if localBackgroundAnimation}
+							<SettingRow
+								icon={Waves}
+								title="Background style"
+								description="Aurora Drift · Wave · Bokeh Float · Ocean · Nebula · Lattice"
+							>
+								<div class="relative" bind:this={backgroundMenuEl}>
+									<button
+										type="button"
+										class="btn btn-sm gap-1.5 border border-base-300 bg-base-100 font-normal hover:bg-base-200"
+										aria-haspopup="listbox"
+										aria-expanded={backgroundOpen}
+										onclick={() => (backgroundOpen = !backgroundOpen)}
+									>
+										{backgroundLabel}
+										<ChevronDown
+											size={14}
+											class={backgroundOpen
+												? 'rotate-180 transition-transform'
+												: 'transition-transform'}
+										/>
+									</button>
+									{#if backgroundOpen}
+										<ul
+											role="listbox"
+											class="absolute right-0 z-30 mt-1.5 w-44 overflow-hidden rounded-xl border border-base-300 bg-base-100 p-1 shadow-xl"
+										>
+											{#each backgroundOptions as opt (opt.value)}
+												<li role="option" aria-selected={opt.value === localBackgroundStyle}>
+													<button
+														type="button"
+														class="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm {opt.value ===
+														localBackgroundStyle
+															? 'bg-primary/10 font-medium text-primary'
+															: 'text-base-content/80 hover:bg-base-200'}"
+														onclick={() => selectBackground(opt.value)}
+													>
+														{opt.label}
+														{#if opt.value === localBackgroundStyle}
+															<Check size={14} />
+														{/if}
+													</button>
+												</li>
+											{/each}
+										</ul>
+									{/if}
+								</div>
+								{#if localBackgroundStyle === 'ocean'}
+									<div
+										class="mt-2 flex max-w-[13rem] items-start gap-1.5 text-xs leading-snug text-warning"
+									>
+										<svg
+											class="mt-px h-3.5 w-3.5 shrink-0"
+											fill="none"
+											stroke="currentColor"
+											viewBox="0 0 24 24"
+										>
+											<path
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												stroke-width="2"
+												d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+											/>
+										</svg>
+										<span
+											>Heavy — real-time FFT ocean sim (~50&nbsp;MB GPU). Try a lighter style on
+											low-end machines.</span
+										>
+									</div>
+								{/if}
+							</SettingRow>
+							{#if localBackgroundStyle === 'ocean'}
+								<SettingRow
+									icon={Waves}
+									title="Wave character"
+									description="Calm glassy swells ↔ stormy chop"
+								>
+									<div class="w-36 sm:w-44">
+										<input
+											type="range"
+											min="0"
+											max="1"
+											step="0.05"
+											value={localOceanCharacter}
+											oninput={(e) => {
+												localOceanCharacter = Number(e.currentTarget.value);
+												saveOceanCharacter();
+											}}
+											class="range range-primary range-xs"
+											aria-label="Wave character"
+										/>
+										<div class="flex justify-between text-xs text-base-content/50 mt-1">
+											<span>Calm</span>
+											<span>Stormy</span>
+										</div>
+									</div>
+								</SettingRow>
+							{/if}
+						{/if}
+					{/if}
+					<SettingRow
+						icon={Gauge}
+						title="Performance stats panel"
+						description="FPS and memory overlay in the top-left"
+					>
+						<SettingToggle
+							checked={localStatsPanel}
+							label="Performance stats panel"
+							onChange={(v) => {
+								localStatsPanel = v;
+								saveStatsPanel();
+							}}
+						/>
+					</SettingRow>
+				</div>
+			</SectionCard>
+		{/if}
 
 		<!-- Data & Sync -->
 		<SectionCard
@@ -968,89 +983,91 @@
 			</div>
 		</SectionCard>
 
-		<!-- Updates -->
-		<SectionCard
-			id="updates"
-			icon={CloudDownload}
-			title="Updates"
-			description="App version and update channel"
-		>
-			<div class="divide-y divide-base-200">
-				<SettingRow
-					icon={CloudDownload}
-					title="Check for updates"
-					description={updateStatusLabel()}
-				>
-					<button
-						class="btn btn-primary btn-sm"
-						onclick={checkForUpdates}
-						disabled={updateStatus === 'checking' || updateStatus === 'downloading'}
+		{#if isDesktop}
+			<!-- Updates -->
+			<SectionCard
+				id="updates"
+				icon={CloudDownload}
+				title="Updates"
+				description="App version and update channel"
+			>
+				<div class="divide-y divide-base-200">
+					<SettingRow
+						icon={CloudDownload}
+						title="Check for updates"
+						description={updateStatusLabel()}
 					>
-						{#if updateStatus === 'checking'}
-							<span class="loading loading-spinner loading-xs"></span>
-							Checking…
-						{:else}
-							Check
-						{/if}
-					</button>
-				</SettingRow>
-				{#if updateStatus === 'available'}
-					<div class="py-3">
-						<button class="btn btn-accent btn-sm" onclick={downloadAndInstallUpdate}>
-							Download & Install
-						</button>
-						{#if updateInfo?.notes}
-							<div class="mt-3 whitespace-pre-wrap text-sm text-base-content/80">
-								{updateInfo.notes}
-							</div>
-						{/if}
-					</div>
-				{/if}
-				{#if updateProgress?.total}
-					<div class="py-3">
-						<progress
-							class="progress progress-primary w-full"
-							value={updateProgress.downloaded}
-							max={updateProgress.total}
-						></progress>
-						<p class="mt-1 text-xs text-base-content/60">
-							Downloaded {Math.round(updateProgress.downloaded / 1024 / 1024)} MB of
-							{Math.round(updateProgress.total / 1024 / 1024)} MB
-						</p>
-					</div>
-				{/if}
-				{#if updateStatus === 'error'}
-					<p class="py-3 text-sm text-error">{updateError}</p>
-				{/if}
-				<div class="py-3">
-					<div class="flex items-start gap-3">
-						<span
-							class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-base-content/10 text-base-content"
+						<button
+							class="btn btn-primary btn-sm"
+							onclick={checkForUpdates}
+							disabled={updateStatus === 'checking' || updateStatus === 'downloading'}
 						>
-							<Server size={16} />
-						</span>
-						<div class="min-w-0 flex-1">
-							<p class="text-sm font-medium">Update proxy URL</p>
-							<p class="mt-0.5 text-xs text-base-content/60">
-								Use a proxy if GitHub is blocked in your region.
+							{#if updateStatus === 'checking'}
+								<span class="loading loading-spinner loading-xs"></span>
+								Checking…
+							{:else}
+								Check
+							{/if}
+						</button>
+					</SettingRow>
+					{#if updateStatus === 'available'}
+						<div class="py-3">
+							<button class="btn btn-accent btn-sm" onclick={downloadAndInstallUpdate}>
+								Download & Install
+							</button>
+							{#if updateInfo?.notes}
+								<div class="mt-3 whitespace-pre-wrap text-sm text-base-content/80">
+									{updateInfo.notes}
+								</div>
+							{/if}
+						</div>
+					{/if}
+					{#if updateProgress?.total}
+						<div class="py-3">
+							<progress
+								class="progress progress-primary w-full"
+								value={updateProgress.downloaded}
+								max={updateProgress.total}
+							></progress>
+							<p class="mt-1 text-xs text-base-content/60">
+								Downloaded {Math.round(updateProgress.downloaded / 1024 / 1024)} MB of
+								{Math.round(updateProgress.total / 1024 / 1024)} MB
 							</p>
-							<div class="join mt-2 w-full">
-								<input
-									id="updateProxyUrl"
-									type="url"
-									bind:value={updateProxyUrl}
-									placeholder="https://proxy.yourdomain.com"
-									class="input input-bordered input-sm join-item min-w-0 flex-1"
-								/>
-								<button class="btn btn-primary btn-sm join-item" onclick={saveUpdateProxyUrl}>
-									Save
-								</button>
+						</div>
+					{/if}
+					{#if updateStatus === 'error'}
+						<p class="py-3 text-sm text-error">{updateError}</p>
+					{/if}
+					<div class="py-3">
+						<div class="flex items-start gap-3">
+							<span
+								class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-base-content/10 text-base-content"
+							>
+								<Server size={16} />
+							</span>
+							<div class="min-w-0 flex-1">
+								<p class="text-sm font-medium">Update proxy URL</p>
+								<p class="mt-0.5 text-xs text-base-content/60">
+									Use a proxy if GitHub is blocked in your region.
+								</p>
+								<div class="join mt-2 w-full">
+									<input
+										id="updateProxyUrl"
+										type="url"
+										bind:value={updateProxyUrl}
+										placeholder="https://proxy.yourdomain.com"
+										class="input input-bordered input-sm join-item min-w-0 flex-1"
+									/>
+									<button class="btn btn-primary btn-sm join-item" onclick={saveUpdateProxyUrl}>
+										Save
+									</button>
+								</div>
 							</div>
 						</div>
 					</div>
 				</div>
-			</div>
-		</SectionCard>
+			</SectionCard>
+		{/if}
 
 		<!-- Tags Section (staff only — the catalog is team-shared) -->
 		{#if $isAdmin}

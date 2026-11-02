@@ -3,18 +3,7 @@
 	import { network } from '$lib/network';
 	import { gotoApp } from '$lib/navigation';
 	import { slide } from 'svelte/transition';
-	import {
-		Clock,
-		TrendingUp,
-		Calendar,
-		Zap,
-		FolderKanban,
-		CheckSquare,
-		Hash as HashIcon,
-		Flame,
-		Timer,
-		Play
-	} from '@lucide/svelte';
+	import { Play } from '@lucide/svelte';
 	import { ChartColumn } from '@jis3r/icons';
 
 	import PageHeader from '$lib/PageHeader.svelte';
@@ -179,8 +168,6 @@
 
 	const stats = $derived([
 		{
-			icon: Clock,
-			tint: 'bg-primary/10 text-primary',
 			label: 'Total time',
 			value: formatDuration(totalSeconds),
 			sub: `${totalEntries} entr${totalEntries === 1 ? 'y' : 'ies'}`,
@@ -188,8 +175,6 @@
 			deltaSlot: true
 		},
 		{
-			icon: TrendingUp,
-			tint: 'bg-secondary/10 text-secondary',
 			label: 'Daily avg',
 			value: formatDuration(avgDaily),
 			sub: `per day · ${days} day${days === 1 ? '' : 's'}`,
@@ -197,19 +182,13 @@
 			deltaSlot: true
 		},
 		{
-			icon: FolderKanban,
-			tint: 'bg-accent/10 text-accent',
-			label: 'Top project',
-			value: topProject?.name ?? '—',
-			sub: topProject
-				? `${formatDuration(topProject.totalSeconds)} · ${topProject.share}%`
-				: 'no projects yet',
+			label: 'Peak hour',
+			value: hasPeak ? `${String(peakHour.hour).padStart(2, '0')}:00` : '—',
+			sub: hasPeak ? formatDuration(peakHour.totalSeconds) : 'most productive',
 			delta: null,
 			deltaSlot: false
 		},
 		{
-			icon: Calendar,
-			tint: 'bg-info/10 text-info',
 			label: 'Best day',
 			value: bestDay && bestDay.totalSeconds > 0 ? bestDay.name : '—',
 			sub:
@@ -218,11 +197,11 @@
 			deltaSlot: false
 		},
 		{
-			icon: Zap,
-			tint: 'bg-warning/10 text-warning',
-			label: 'Peak hour',
-			value: hasPeak ? `${String(peakHour.hour).padStart(2, '0')}:00` : '—',
-			sub: hasPeak ? formatDuration(peakHour.totalSeconds) : 'most productive',
+			label: 'Top project',
+			value: topProject?.name ?? '—',
+			sub: topProject
+				? `${formatDuration(topProject.totalSeconds)} · ${topProject.share}%`
+				: 'no projects yet',
 			delta: null,
 			deltaSlot: false
 		}
@@ -280,23 +259,26 @@
 	}
 </script>
 
-<div class="min-h-screen p-4 md:p-6 lg:p-8">
-	<div class="max-w-7xl mx-auto flex flex-col gap-6">
+<div class="p-0 md:p-6 lg:p-8">
+	<div class="max-w-7xl mx-auto flex flex-col gap-5 md:gap-6">
 		<!-- ============================= Header ============================= -->
 		<PageHeader
 			icon={ChartColumn}
 			title="Reports"
 			subtitle={`Where your hours go — ${getTimeRangeDisplay(selectedTimeRange).toLowerCase()}`}
-		>
-			<div class="flex flex-col items-end gap-2">
-				{#if isShowingCachedData}
-					<div class="badge badge-warning badge-outline gap-1.5 py-3 px-3">
-						<span class="loading loading-dots loading-xs"></span>
-						Offline — showing cached data
-					</div>
-				{/if}
+		/>
+
+		<!-- ====================== Range toolbar (scrolls on phones) ====================== -->
+		<div class="flex flex-col gap-2">
+			{#if isShowingCachedData}
+				<div class="badge badge-warning badge-outline gap-1.5 py-3 px-3 self-start">
+					<span class="loading loading-dots loading-xs"></span>
+					Offline — showing cached data
+				</div>
+			{/if}
+			<div class="-mx-4 px-4 md:mx-0 md:px-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
 				<div
-					class="flex flex-wrap justify-end gap-1 bg-base-100 border border-base-200 rounded-full p-1 shadow-sm"
+					class="inline-flex gap-1 bg-base-100 border border-base-200 rounded-full p-1 shadow-sm min-w-max"
 					role="tablist"
 					aria-label="Time range"
 				>
@@ -305,7 +287,8 @@
 							type="button"
 							role="tab"
 							aria-selected={selectedTimeRange === opt.value}
-							class="btn btn-xs rounded-full border-0 {selectedTimeRange === opt.value
+							class="btn btn-sm rounded-full border-0 whitespace-nowrap {selectedTimeRange ===
+							opt.value
 								? 'bg-primary text-primary-content shadow-sm'
 								: 'btn-ghost text-base-content/70 hover:bg-base-200'}"
 							onclick={() => pickRange(opt.value)}
@@ -315,125 +298,105 @@
 					{/each}
 				</div>
 			</div>
-		</PageHeader>
+		</div>
 
 		<!-- ======================= Custom range panel ======================= -->
 		{#if showCustomDate}
-			<div
-				class="card bg-base-100 border border-base-200 shadow-sm"
-				transition:slide={{ duration: 150 }}
-			>
-				<div class="card-body p-3.5">
-					<div class="flex flex-wrap items-end gap-3">
-						<label class="form-control">
-							<span
-								class="label-text text-[11px] font-semibold uppercase tracking-wider text-base-content/60 pb-1"
-								>From</span
-							>
-							<input type="date" class="input input-bordered input-sm" bind:value={pendingStart} />
+			<div class={cardCls} transition:slide={{ duration: 150 }}>
+				<div class="card-body p-4 gap-3">
+					<div class="grid grid-cols-2 gap-3 sm:max-w-md">
+						<label class="form-control min-w-0">
+							<span class="label-text text-xs font-medium text-base-content/70 pb-1">From</span>
+							<input type="date" class="input input-bordered w-full" bind:value={pendingStart} />
 						</label>
-						<label class="form-control">
-							<span
-								class="label-text text-[11px] font-semibold uppercase tracking-wider text-base-content/60 pb-1"
-								>To</span
-							>
-							<input type="date" class="input input-bordered input-sm" bind:value={pendingEnd} />
+						<label class="form-control min-w-0">
+							<span class="label-text text-xs font-medium text-base-content/70 pb-1">To</span>
+							<input type="date" class="input input-bordered w-full" bind:value={pendingEnd} />
 						</label>
+					</div>
+					<div class="flex gap-2">
 						<button
-							class="btn btn-primary btn-sm"
+							class="btn btn-primary flex-1 sm:flex-none"
 							onclick={applyCustomDate}
 							disabled={!pendingStart || !pendingEnd}
 						>
 							Apply range
 						</button>
-						<button class="btn btn-ghost btn-sm" onclick={() => (showCustomDate = false)}
-							>Cancel</button
-						>
-						<p class="text-[11px] text-base-content/40 w-full">
-							Deltas compare against the same-length window right before this range.
-						</p>
+						<button class="btn btn-ghost" onclick={() => (showCustomDate = false)}>Cancel</button>
 					</div>
+					<p class="text-xs text-base-content/60">
+						Deltas compare against the same-length window right before this range.
+					</p>
 				</div>
 			</div>
 		{/if}
 
 		<!-- =========================== Error state =========================== -->
 		{#if error}
-			<div class="alert alert-error shadow-sm justify-between">
+			<div class="alert alert-error shadow-sm justify-between" role="alert">
 				<span>{error}</span>
 				<button class="btn btn-sm btn-outline btn-error" onclick={retry}>Retry</button>
 			</div>
 		{:else if loading && !reportQuery.data}
 			<!-- ======================== Skeleton states ======================== -->
-			<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-				{#each Array.from({ length: 5 }) as _}
-					<div class="card bg-base-100 border border-base-200 shadow-sm">
-						<div class="card-body p-3.5 gap-3">
-							<div class="skeleton h-7 w-7 rounded-lg"></div>
-							<div class="skeleton h-5 w-24"></div>
+			<div class="grid grid-cols-2 lg:grid-cols-5 gap-3" aria-busy="true">
+				{#each Array.from({ length: 5 }) as _, i}
+					<div class="{cardCls} {i === 4 ? 'col-span-2 lg:col-span-1' : ''}">
+						<div class="card-body p-4 gap-2">
 							<div class="skeleton h-3 w-16"></div>
+							<div class="skeleton h-6 w-24"></div>
+							<div class="skeleton h-3 w-20"></div>
 						</div>
 					</div>
 				{/each}
 			</div>
 			<div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-				<div class="card bg-base-100 border border-base-200 shadow-sm lg:col-span-2">
-					<div class="card-body">
-						<div class="skeleton h-72 w-full rounded-xl"></div>
+				<div class="{cardCls} lg:col-span-2">
+					<div class="card-body p-4 sm:p-5">
+						<div class="skeleton h-64 w-full rounded-xl"></div>
 					</div>
 				</div>
-				<div class="card bg-base-100 border border-base-200 shadow-sm">
-					<div class="card-body space-y-4">
+				<div class={cardCls}>
+					<div class="card-body p-4 sm:p-5 space-y-4">
 						{#each Array.from({ length: 5 }) as _}
 							<div class="skeleton h-3 w-full"></div>
 						{/each}
 					</div>
 				</div>
 			</div>
-			<div class="skeleton h-48 w-full rounded-2xl"></div>
 		{:else}
 			<!-- ============================ Stat strip =========================== -->
 			<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-				{#each stats as stat}
-					{@const TileIcon = stat.icon}
-					<div class="{cardCls} hover:shadow-md hover:-translate-y-0.5 transition-all duration-200">
-						<div class="card-body p-3.5 gap-1.5">
-							<div class="flex items-center justify-between gap-2">
-								<div class="flex items-center gap-2 min-w-0">
-									<div
-										class="w-7 h-7 rounded-lg {stat.tint} flex items-center justify-center shrink-0"
-									>
-										<TileIcon class="w-3.5 h-3.5" />
-									</div>
-									<span
-										class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50 truncate"
-									>
-										{stat.label}
-									</span>
-								</div>
+				{#each stats as stat, i}
+					<div
+						class="{cardCls} min-w-0 {i === stats.length - 1
+							? 'col-span-2 md:col-span-1'
+							: ''}"
+					>
+						<div class="card-body p-4 gap-1">
+							<div class="flex items-center justify-between gap-2 min-h-5">
+								<span class="text-xs text-base-content/70 truncate">{stat.label}</span>
 								{#if stat.deltaSlot}
 									{#if stat.delta !== null}
 										<span
-											class="badge badge-sm border-0 gap-0.5 px-1.5 {stat.delta >= 0
+											class="badge badge-sm border-0 px-1.5 tabular-nums {stat.delta >= 0
 												? 'bg-success/15 text-success'
 												: 'bg-error/15 text-error'}"
 											title="vs previous period"
 										>
-											{stat.delta >= 0 ? '▲' : '▼'}
-											{Math.abs(stat.delta)}%
+											{stat.delta >= 0 ? '+' : '-'}{Math.abs(stat.delta)}%
 										</span>
 									{:else}
-										<span
-											class="text-[10px] text-base-content/40"
-											title="No previous period to compare">vs prior</span
+										<span class="text-xs text-base-content/60" title="No previous period to compare"
+											>vs prior</span
 										>
 									{/if}
 								{/if}
 							</div>
-							<p class="text-xl font-bold tabular-nums leading-none truncate" title={stat.value}>
+							<p class="text-2xl font-bold tabular-nums leading-tight truncate" title={stat.value}>
 								{stat.value}
 							</p>
-							<p class="text-[11px] text-base-content/50 truncate">{stat.sub}</p>
+							<p class="text-xs text-base-content/70 truncate">{stat.sub}</p>
 						</div>
 					</div>
 				{/each}
@@ -441,17 +404,12 @@
 
 			<!-- ====================== Whole-page empty state ====================== -->
 			{#if !hasAnyData}
-				<div class="card bg-base-100 border border-base-200 shadow-sm">
-					<div class="card-body items-center text-center py-14 gap-3">
-						<div
-							class="w-14 h-14 rounded-2xl bg-primary/10 text-primary flex items-center justify-center"
-						>
-							<Timer class="w-7 h-7" />
-						</div>
+				<div class={cardCls}>
+					<div class="card-body items-center text-center py-12 gap-3">
 						<h2 class="text-lg font-bold">No tracked time in this range</h2>
-						<p class="text-sm text-base-content/50 max-w-sm">
-							Start a timer and this page lights up with trends, your weekly rhythm, and where the
-							hours went.
+						<p class="text-sm text-base-content/70 max-w-sm">
+							Start a timer and this page fills with trends, your weekly rhythm, and where the hours
+							went.
 						</p>
 						<button class="btn btn-primary mt-2" onclick={() => gotoApp('/timer')}>
 							<Play class="w-4 h-4" />
@@ -460,106 +418,67 @@
 					</div>
 				</div>
 			{:else}
-				<!-- ===================== Bento row 1: hero + projects ===================== -->
+				<!-- ===================== Row 1: daily activity + projects ===================== -->
 				<div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-					<div class="{cardCls} lg:col-span-2">
-						<div class="card-body p-5">
-							<div class="flex items-center justify-between gap-3 mb-1">
-								<div class="flex items-center gap-2.5 min-w-0">
-									<div
-										class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0"
-									>
-										<TrendingUp class="w-4 h-4" />
-									</div>
-									<h3 class="card-title text-sm">Daily activity</h3>
-								</div>
-								<span
-									class="badge badge-ghost badge-sm text-base-content/60 font-normal shrink-0 tabular-nums"
-								>
-									{currentRange.start ?? '—'} – {currentRange.end ?? '—'}
+					<section class="{cardCls} min-w-0 lg:col-span-2">
+						<div class="card-body p-4 sm:p-5 gap-3">
+							<div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+								<h3 class="card-title text-base">Daily activity</h3>
+								<span class="text-xs text-base-content/70 tabular-nums">
+									{currentRange.start ?? '—'} to {currentRange.end ?? '—'}
 								</span>
 							</div>
 							<DailyActivityChart buckets={trend.buckets} unit={trend.unit} />
 						</div>
-					</div>
+					</section>
 
-					<div class={cardCls}>
-						<div class="card-body p-5">
-							<div class="flex items-center gap-2.5 mb-4">
-								<div
-									class="w-8 h-8 rounded-lg bg-accent/10 text-accent flex items-center justify-center shrink-0"
-								>
-									<FolderKanban class="w-4 h-4" />
-								</div>
-								<h3 class="card-title text-sm">By project</h3>
-							</div>
+					<section class="{cardCls} min-w-0">
+						<div class="card-body p-4 sm:p-5 gap-4">
+							<h3 class="card-title text-base">By project</h3>
 							{#if projectItems.length}
 								<RankedBars items={projectItems} ariaLabel="Time by project" />
 							{:else}
-								<p class="text-sm text-base-content/50">No project data in this range.</p>
+								<p class="text-sm text-base-content/70">No project data in this range.</p>
 							{/if}
 						</div>
-					</div>
+					</section>
 				</div>
 
-				<!-- ===================== Bento row 2: rhythm + tasks ===================== -->
+				<!-- ===================== Row 2: rhythm + tasks ===================== -->
 				<div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-					<div class="{cardCls} lg:col-span-2">
-						<div class="card-body p-5">
-							<div class="flex items-center gap-2.5 mb-4">
-								<div
-									class="w-8 h-8 rounded-lg bg-secondary/10 text-secondary flex items-center justify-center shrink-0"
-								>
-									<Flame class="w-4 h-4" />
-								</div>
-								<div class="min-w-0">
-									<h3 class="card-title text-sm">Work rhythm</h3>
-									<p class="text-xs text-base-content/50">
-										when your hours land — Sat to Fri, 00:00 to 23:00
-									</p>
-								</div>
+					<section class="{cardCls} min-w-0 lg:col-span-2">
+						<div class="card-body p-4 sm:p-5 gap-4">
+							<div>
+								<h3 class="card-title text-base">Work rhythm</h3>
+								<p class="text-sm text-base-content/70">
+									When your hours land, Sat to Fri, 00:00 to 23:00
+								</p>
 							</div>
 							<PunchcardHeatmap matrix={heatmap} />
 						</div>
-					</div>
+					</section>
 
-					<div class={cardCls}>
-						<div class="card-body p-5">
-							<div class="flex items-center gap-2.5 mb-4">
-								<div
-									class="w-8 h-8 rounded-lg bg-info/10 text-info flex items-center justify-center shrink-0"
-								>
-									<CheckSquare class="w-4 h-4" />
-								</div>
-								<h3 class="card-title text-sm">Top tasks</h3>
-							</div>
+					<section class="{cardCls} min-w-0">
+						<div class="card-body p-4 sm:p-5 gap-4">
+							<h3 class="card-title text-base">Top tasks</h3>
 							{#if taskItems.length}
 								<RankedBars items={taskItems} ariaLabel="Top tasks by time" />
 							{:else}
-								<p class="text-sm text-base-content/50">No task titles in this range.</p>
+								<p class="text-sm text-base-content/70">No task titles in this range.</p>
 							{/if}
 						</div>
-					</div>
+					</section>
 				</div>
 
 				<!-- =========================== Top tags =========================== -->
-				<div class={cardCls}>
-					<div class="card-body p-5">
-						<div class="flex items-center gap-2.5 mb-4">
-							<div
-								class="w-8 h-8 rounded-lg bg-warning/10 text-warning flex items-center justify-center shrink-0"
-							>
-								<HashIcon class="w-4 h-4" />
-							</div>
-							<div class="min-w-0">
-								<h3 class="card-title text-sm">Top tags</h3>
-								<p class="text-xs text-base-content/50">
-									time by tag — colored with each tag's color
-								</p>
-							</div>
+				<section class="{cardCls} min-w-0">
+					<div class="card-body p-4 sm:p-5 gap-4">
+						<div>
+							<h3 class="card-title text-base">Top tags</h3>
+							<p class="text-sm text-base-content/70">Time by tag, in each tag's color</p>
 						</div>
 						{#if tagItems.length}
-							<div class="grid md:grid-cols-2 gap-x-10 gap-y-5">
+							<div class="grid md:grid-cols-2 gap-x-10 gap-y-3.5">
 								{#each tagHalves as half, halfIndex}
 									{#if half.length}
 										<RankedBars items={half} ariaLabel={`Top tags (part ${halfIndex + 1})`} />
@@ -567,29 +486,66 @@
 								{/each}
 							</div>
 						{:else}
-							<p class="text-sm text-base-content/50">No tags used in this range.</p>
+							<p class="text-sm text-base-content/70">No tags used in this range.</p>
 						{/if}
 					</div>
-				</div>
+				</section>
 
 				<!-- ======================== Recent activity ======================== -->
-				<div class={cardCls}>
-					<div class="card-body p-5">
-						<div class="flex items-center gap-2.5 mb-4">
-							<div
-								class="w-8 h-8 rounded-lg bg-base-200 text-base-content/70 flex items-center justify-center shrink-0"
-							>
-								<Clock class="w-4 h-4" />
-							</div>
-							<h3 class="card-title text-sm">Recent activity</h3>
-							<span class="badge badge-ghost badge-sm text-base-content/60 font-normal">
+				<section class="{cardCls} min-w-0">
+					<div class="card-body p-4 sm:p-5 gap-3">
+						<div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+							<h3 class="card-title text-base">Recent activity</h3>
+							<span class="text-xs text-base-content/70 tabular-nums">
 								Showing {recentEntries.length} of {totalEntries}
 							</span>
 						</div>
-						<div class="overflow-x-auto -mx-5 px-5">
-							<table class="table table-xs">
+
+						<!-- Phones: one row per entry -->
+						<ul class="md:hidden divide-y divide-base-200 -mx-4">
+							{#each recentEntries as entry}
+								<li class="px-4 py-3 flex items-start justify-between gap-3">
+									<div class="min-w-0 flex-1">
+										<p class="text-xs text-base-content/70 tabular-nums">
+											{new Date(entry.start_time).toLocaleDateString(undefined, {
+												month: 'short',
+												day: 'numeric'
+											})}
+										</p>
+										<p class="font-medium truncate" title={entry.title}>{entry.title}</p>
+										{#if entry.project}
+											<p class="flex items-center gap-1.5 text-sm text-base-content/70 min-w-0">
+												<span
+													class="w-2 h-2 rounded-full {projectDotClass(entry.project)} shrink-0"
+												></span>
+												<span class="truncate">{entry.project}</span>
+											</p>
+										{/if}
+										{#if entry.tags?.length}
+											<div class="flex gap-1 flex-wrap items-center mt-1.5">
+												{#each entry.tags.slice(0, 3) as tag}
+													<TagChip {tag} size="xs" />
+												{/each}
+												{#if entry.tags.length > 3}
+													<span class="badge badge-xs badge-ghost font-normal"
+														>+{entry.tags.length - 3}</span
+													>
+												{/if}
+											</div>
+										{/if}
+									</div>
+									<span class="font-mono tabular-nums text-sm shrink-0">
+										{formatDuration(getEntryDurationSeconds(entry))}
+									</span>
+								</li>
+							{/each}
+						</ul>
+
+						<!-- Tablet and up: table -->
+						<div class="hidden md:block overflow-x-auto">
+							<table class="table table-sm">
 								<thead>
-									<tr class="text-[11px] uppercase tracking-wider text-base-content/50">
+									<tr class="text-xs text-base-content/70">
 										<th>Date</th>
 										<th>Title</th>
 										<th>Project</th>
@@ -600,16 +556,16 @@
 								<tbody>
 									{#each recentEntries as entry}
 										<tr class="hover">
-											<td class="text-xs whitespace-nowrap tabular-nums">
+											<td class="text-sm whitespace-nowrap tabular-nums">
 												{new Date(entry.start_time).toLocaleDateString(undefined, {
 													month: 'short',
 													day: 'numeric'
 												})}
 											</td>
-											<td class="text-xs truncate max-w-[220px] font-medium" title={entry.title}
+											<td class="text-sm truncate max-w-[220px] font-medium" title={entry.title}
 												>{entry.title}</td
 											>
-											<td class="text-xs whitespace-nowrap">
+											<td class="text-sm whitespace-nowrap">
 												{#if entry.project}
 													<span class="flex items-center gap-1.5">
 														<span
@@ -620,10 +576,10 @@
 														{entry.project}
 													</span>
 												{:else}
-													<span class="text-base-content/40">—</span>
+													<span class="text-base-content/60">—</span>
 												{/if}
 											</td>
-											<td class="text-xs">
+											<td class="text-sm">
 												{#if entry.tags?.length}
 													<div class="flex gap-1 flex-wrap items-center">
 														{#each entry.tags.slice(0, 3) as tag}
@@ -636,10 +592,10 @@
 														{/if}
 													</div>
 												{:else}
-													<span class="text-base-content/40">—</span>
+													<span class="text-base-content/60">—</span>
 												{/if}
 											</td>
-											<td class="text-xs text-right font-mono tabular-nums">
+											<td class="text-sm text-right font-mono tabular-nums">
 												{formatDuration(getEntryDurationSeconds(entry))}
 											</td>
 										</tr>
@@ -648,7 +604,7 @@
 							</table>
 						</div>
 					</div>
-				</div>
+				</section>
 			{/if}
 		{/if}
 	</div>

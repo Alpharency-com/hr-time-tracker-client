@@ -16,7 +16,6 @@
 		ArrowLeft,
 		ArrowRight,
 		X,
-		CalendarDays,
 		Briefcase,
 		Play,
 		ListChecks,
@@ -274,11 +273,6 @@
 		return `${formatTime(entry.start_time)} – ${formatTime(entry.end_time)}`;
 	}
 
-	function getStatusBadge(entry: TimeEntry) {
-		if (entry.is_active) return { text: 'Active', class: 'badge-success' };
-		return { text: 'Completed', class: 'badge-neutral' };
-	}
-
 	// ---------------------------------------------------------------------------
 	// Time range handling
 	// ---------------------------------------------------------------------------
@@ -450,8 +444,8 @@
 	});
 </script>
 
-<div class="min-h-screen p-4 md:p-6 lg:p-8">
-	<div class="mx-auto flex max-w-7xl flex-col gap-6">
+<div class="p-0 md:p-6 lg:p-8">
+	<div class="mx-auto flex max-w-7xl flex-col gap-5 md:gap-6">
 		<!-- ============================= Header ============================= -->
 		<PageHeader
 			icon={ListChecks}
@@ -459,121 +453,73 @@
 			subtitle={`Your time log — ${getTimeRangeDisplay(selectedTimeRange).toLowerCase()}`}
 		/>
 
-		<!-- Offline warning -->
+		<!-- Offline / cached notices -->
 		{#if !$network.isOnline}
-			<div class="alert alert-warning border border-warning/20 shadow-sm">
-				<div class="flex items-center gap-3">
-					<Clock size={20} class="shrink-0 text-warning" />
-					<div>
-						<p class="font-medium">You are offline</p>
-						<p class="text-sm opacity-80">Showing cached data. Some features may be limited.</p>
-					</div>
+			<div class="alert alert-warning border border-warning/20 shadow-sm" role="status">
+				<Clock size={20} class="shrink-0" />
+				<div>
+					<p class="font-medium">You are offline</p>
+					<p class="text-sm opacity-80">Showing cached data. Some features may be limited.</p>
 				</div>
 			</div>
-		{/if}
-
-		{#if isShowingCachedData}
-			<div class="alert alert-info border border-info/20 shadow-sm">
-				<div class="flex items-center gap-3">
-					<Clock size={20} class="shrink-0 text-info" />
-					<div>
-						<p class="font-medium">Showing cached data</p>
-						<p class="text-sm opacity-80">This data may not be up to date. Reconnect to refresh.</p>
-					</div>
+		{:else if isShowingCachedData}
+			<div class="alert alert-info border border-info/20 shadow-sm" role="status">
+				<Clock size={20} class="shrink-0" />
+				<div>
+					<p class="font-medium">Showing cached data</p>
+					<p class="text-sm opacity-80">This data may not be up to date. Reconnect to refresh.</p>
 				</div>
 			</div>
 		{/if}
 
 		<!-- ============================= Stats strip ============================= -->
-		<div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
-			<div class="card border border-base-200 bg-base-100 shadow-sm">
-				<div class="card-body flex-row items-center gap-3 p-4">
-					<span
-						class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"
-						aria-hidden="true"
-					>
-						<Clock size={18} />
-					</span>
-					<div class="min-w-0">
-						<div class="text-xs text-base-content/60">Total time</div>
-						<div class="truncate font-mono text-lg font-bold leading-tight">
-							{#if statsLoading}
-								<span class="loading loading-spinner loading-xs text-primary"></span>
-							{:else}
-								{formatDurationShort(stats?.total_seconds ?? 0)}
-							{/if}
-						</div>
-					</div>
-				</div>
+		<div
+			class="card grid grid-cols-2 gap-px overflow-hidden border border-base-200 bg-base-200 shadow-sm lg:grid-cols-4"
+		>
+			<div class="bg-base-100 p-4">
+				<p class="text-xs text-base-content/70">Total time</p>
+				<p class="mt-1 font-mono text-xl font-bold leading-tight tabular-nums">
+					{#if statsLoading}
+						<span class="skeleton inline-block h-6 w-20 align-middle"></span>
+					{:else}
+						{formatDurationShort(stats?.total_seconds ?? 0)}
+					{/if}
+				</p>
 			</div>
-
-			<div class="card border border-base-200 bg-base-100 shadow-sm">
-				<div class="card-body flex-row items-center gap-3 p-4">
-					<span
-						class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-secondary/10 text-secondary"
-						aria-hidden="true"
-					>
-						<ListChecks size={18} />
-					</span>
-					<div class="min-w-0">
-						<div class="text-xs text-base-content/60">Entries</div>
-						<div class="text-lg font-bold leading-tight">{stats?.entry_count ?? 0}</div>
-					</div>
-				</div>
+			<div class="bg-base-100 p-4">
+				<p class="text-xs text-base-content/70">Entries</p>
+				<p class="mt-1 text-xl font-bold leading-tight tabular-nums">{stats?.entry_count ?? 0}</p>
 			</div>
-
-			<div class="card border border-base-200 bg-base-100 shadow-sm">
-				<div class="card-body flex-row items-center gap-3 p-4">
-					<span
-						class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-success/10 text-success"
-						aria-hidden="true"
-					>
-						<Play size={18} />
-					</span>
-					<div class="min-w-0">
-						<div class="text-xs text-base-content/60">Active now</div>
-						<div class="text-lg font-bold leading-tight">
-							{#if (stats?.active_count ?? 0) > 0}
-								<span class="inline-flex items-center gap-1.5 text-success">
-									<span class="h-2 w-2 animate-pulse rounded-full bg-success"></span>
-									{stats?.active_count}
-								</span>
-							{:else}
-								0
-							{/if}
-						</div>
-					</div>
-				</div>
+			<div class="bg-base-100 p-4">
+				<p class="text-xs text-base-content/70">Active now</p>
+				<p
+					class="mt-1 text-xl font-bold leading-tight tabular-nums {(stats?.active_count ?? 0) > 0
+						? 'text-success'
+						: ''}"
+				>
+					{stats?.active_count ?? 0}
+				</p>
 			</div>
-
-			<div class="card border border-base-200 bg-base-100 shadow-sm">
-				<div class="card-body flex-row items-center gap-3 p-4">
-					<span
-						class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-info/10 text-info"
-						aria-hidden="true"
-					>
-						<CalendarDays size={18} />
-					</span>
-					<div class="min-w-0">
-						<div class="text-xs text-base-content/60">Avg / active day</div>
-						<div class="truncate font-mono text-lg font-bold leading-tight">
-							{#if statsLoading}
-								<span class="loading loading-spinner loading-xs text-primary"></span>
-							{:else}
-								{formatDurationShort(avgPerDaySeconds)}
-							{/if}
-						</div>
-					</div>
-				</div>
+			<div class="bg-base-100 p-4">
+				<p class="text-xs text-base-content/70">Avg per active day</p>
+				<p class="mt-1 font-mono text-xl font-bold leading-tight tabular-nums">
+					{#if statsLoading}
+						<span class="skeleton inline-block h-6 w-20 align-middle"></span>
+					{:else}
+						{formatDurationShort(avgPerDaySeconds)}
+					{/if}
+				</p>
 			</div>
 		</div>
 
 		<!-- ============================= Filter bar ============================= -->
 		<div class="flex flex-col gap-3">
-			<div class="flex flex-wrap items-center gap-3">
-				<!-- Pill time-range control (matches Reports) -->
+			<!-- Time range: one scrollable row on phones -->
+			<div
+				class="-mx-4 overflow-x-auto px-4 [scrollbar-width:none] md:mx-0 md:px-0 [&::-webkit-scrollbar]:hidden"
+			>
 				<div
-					class="flex flex-wrap gap-1 rounded-full border border-base-200 bg-base-100 p-1 shadow-sm"
+					class="inline-flex min-w-max gap-1 rounded-full border border-base-200 bg-base-100 p-1 shadow-sm"
 					role="tablist"
 					aria-label="Time range"
 				>
@@ -582,7 +528,8 @@
 							type="button"
 							role="tab"
 							aria-selected={selectedTimeRange === opt.value}
-							class="btn btn-xs rounded-full border-0 {selectedTimeRange === opt.value
+							class="btn btn-sm whitespace-nowrap rounded-full border-0 {selectedTimeRange ===
+							opt.value
 								? 'bg-primary text-primary-content shadow-sm'
 								: 'btn-ghost text-base-content/70 hover:bg-base-200'}"
 							onclick={() => pickRange(opt.value)}
@@ -591,22 +538,72 @@
 						</button>
 					{/each}
 				</div>
+			</div>
 
-				<div class="ml-auto flex flex-wrap items-center gap-2">
+			<div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+				<!-- Search -->
+				<div class="relative w-full sm:w-64">
+					<span
+						class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2"
+						aria-hidden="true"
+					>
+						<Search size={15} class="text-base-content/50" />
+					</span>
+					<input
+						bind:this={searchInputEl}
+						type="search"
+						placeholder="Search entries…"
+						aria-label="Search entries"
+						bind:value={searchInput}
+						oninput={handleSearchInput}
+						class="input input-bordered w-full pl-9 pr-10 sm:input-sm"
+					/>
+					{#if searchInput}
+						<button
+							type="button"
+							class="btn btn-ghost btn-xs absolute right-2 top-1/2 -translate-y-1/2 p-1"
+							onclick={clearSearch}
+							aria-label="Clear search"
+						>
+							<span aria-hidden="true"><X size={14} /></span>
+						</button>
+					{:else}
+						<kbd
+							class="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 rounded-md border border-base-300 bg-base-200 px-1.5 py-0.5 font-mono text-[10px] text-base-content/60 sm:block"
+							>/</kbd
+						>
+					{/if}
+				</div>
+
+				<div
+					class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 sm:flex sm:flex-wrap sm:items-center"
+				>
 					<!-- Project filter -->
-					<div class="dropdown">
-						<div tabindex="0" role="button" class="btn btn-outline btn-sm gap-1.5">
-							<span aria-hidden="true"><Briefcase size={15} class="text-base-content/60" /></span>
-							{#if selectedProject === null}
-								All projects
-							{:else}
-								{projectsQuery.data?.find((p) => p.id === selectedProject)?.title ?? 'Project'}
-							{/if}
-							<span aria-hidden="true"><ChevronDown size={14} class="text-base-content/50" /></span>
+					<div class="dropdown min-w-0">
+						<div
+							tabindex="0"
+							role="button"
+							class="btn btn-outline w-full justify-between gap-1.5 sm:btn-sm sm:w-auto"
+						>
+							<span class="flex min-w-0 items-center gap-1.5">
+								<span aria-hidden="true"
+									><Briefcase size={15} class="shrink-0 text-base-content/60" /></span
+								>
+								<span class="truncate sm:max-w-[10rem]">
+									{#if selectedProject === null}
+										All projects
+									{:else}
+										{projectsQuery.data?.find((p) => p.id === selectedProject)?.title ?? 'Project'}
+									{/if}
+								</span>
+							</span>
+							<span aria-hidden="true"
+								><ChevronDown size={14} class="shrink-0 text-base-content/60" /></span
+							>
 						</div>
 						<ul
 							tabindex="-1"
-							class="dropdown-content z-[1] menu max-h-72 w-56 overflow-y-auto rounded-box bg-base-100 p-2 shadow-lg"
+							class="dropdown-content z-[1] menu max-h-72 w-64 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-box border border-base-200 bg-base-100 p-2 shadow-lg"
 						>
 							<li>
 								<button
@@ -631,57 +628,36 @@
 						</ul>
 					</div>
 
-					<!-- Search -->
-					<div class="relative">
-						<span
-							class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2"
-							aria-hidden="true"
-						>
-							<Search size={15} class="text-base-content/40" />
-						</span>
-						<input
-							bind:this={searchInputEl}
-							type="text"
-							placeholder="Search entries…"
-							bind:value={searchInput}
-							oninput={handleSearchInput}
-							class="input input-bordered input-sm w-48 pl-9 pr-16 transition-all focus:w-56"
-						/>
-						{#if searchInput}
-							<button
-								type="button"
-								class="absolute right-2 top-1/2 -translate-y-1/2 btn btn-ghost btn-xs p-1"
-								onclick={clearSearch}
-								aria-label="Clear search"
-							>
-								<span aria-hidden="true"><X size={14} /></span>
-							</button>
-						{:else}
-							<kbd
-								class="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md border border-base-300 bg-base-200 px-1.5 py-0.5 font-mono text-[10px] text-base-content/50"
-								>/</kbd
-							>
-						{/if}
-					</div>
-
 					<!-- Sort -->
-					<div class="dropdown">
-						<div tabindex="0" role="button" class="btn btn-outline btn-sm gap-1.5">
-							Sort
-							<span class="max-w-[10rem] truncate text-xs font-normal text-base-content/60">
-								{sortLabel}
+					<div class="dropdown dropdown-end min-w-0 sm:dropdown-start">
+						<div
+							tabindex="0"
+							role="button"
+							class="btn btn-outline w-full justify-between gap-1.5 sm:btn-sm sm:w-auto"
+						>
+							<span class="flex min-w-0 items-baseline gap-1.5">
+								Sort
+								<span
+									class="hidden max-w-[10rem] truncate text-xs font-normal text-base-content/70 sm:inline"
+								>
+									{sortLabel}
+								</span>
 							</span>
-							<span aria-hidden="true"><ChevronDown size={14} class="text-base-content/50" /></span>
+							<span aria-hidden="true"
+								><ChevronDown size={14} class="shrink-0 text-base-content/60" /></span
+							>
 						</div>
 						<ul
 							tabindex="-1"
-							class="dropdown-content z-[1] menu max-h-72 w-64 overflow-y-auto rounded-box bg-base-100 p-2 shadow-lg"
+							class="dropdown-content z-[1] menu max-h-72 w-64 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-box border border-base-200 bg-base-100 p-2 shadow-lg"
 						>
 							{#each sortOptions as opt}
 								<li>
 									<button
 										type="button"
-										class="dropdown-close text-left"
+										class="dropdown-close text-left {mobileSort === opt.value
+											? 'font-semibold text-primary'
+											: ''}"
 										onclick={() => handleSortChange(opt.value)}
 									>
 										{opt.label}
@@ -694,48 +670,53 @@
 					<!-- CSV export -->
 					<button
 						type="button"
-						class="btn btn-ghost btn-sm gap-1.5 text-base-content/70 hover:bg-base-200"
+						class="btn btn-ghost gap-1.5 text-base-content/80 hover:bg-base-200 sm:btn-sm"
 						onclick={() => void exportCSV()}
 						disabled={exporting}
 						title="Export the current view as CSV"
+						aria-label="Export CSV"
 					>
 						{#if exporting}
 							<span class="loading loading-spinner loading-xs"></span>
 						{:else}
-							<span aria-hidden="true"><Download size={15} /></span>
+							<span aria-hidden="true"><Download size={16} /></span>
 						{/if}
-						Export
+						<span class="hidden sm:inline">Export</span>
 					</button>
 				</div>
 			</div>
 
-			<!-- Tag chips -->
+			<!-- Tag chips: one scrollable row on phones -->
 			{#if (tagsQuery.data ?? []).length > 0}
-				<div class="flex flex-wrap items-center gap-1.5">
-					<span class="mr-1" aria-hidden="true"
-						><TagIcon size={13} class="text-base-content/40" /></span
-					>
-					{#each tagsQuery.data ?? [] as tag (tag.id)}
-						<button
-							type="button"
-							class="badge gap-1 border py-2.5 transition-all {selectedTags.includes(tag.title)
-								? 'border-primary bg-primary/10 text-primary shadow-sm'
-								: 'border-base-300 bg-base-100 text-base-content/60 hover:border-primary/40 hover:text-base-content'}"
-							onclick={() => toggleTag(tag.title)}
-							aria-pressed={selectedTags.includes(tag.title)}
-						>
-							{tag.title}
-						</button>
-					{/each}
-					{#if selectedTags.length > 0}
-						<button
-							type="button"
-							class="btn btn-ghost btn-xs text-base-content/50"
-							onclick={() => (selectedTags = [])}
-						>
-							Clear
-						</button>
-					{/if}
+				<div
+					class="-mx-4 overflow-x-auto px-4 [scrollbar-width:none] md:mx-0 md:px-0 [&::-webkit-scrollbar]:hidden"
+				>
+					<div class="flex w-max items-center gap-1.5 md:w-auto md:flex-wrap">
+						<span aria-hidden="true"><TagIcon size={13} class="text-base-content/50" /></span>
+						{#each tagsQuery.data ?? [] as tag (tag.id)}
+							<button
+								type="button"
+								class="badge h-7 gap-1 whitespace-nowrap border px-3 transition-colors {selectedTags.includes(
+									tag.title
+								)
+									? 'border-primary bg-primary/10 text-primary'
+									: 'border-base-300 bg-base-100 text-base-content/70 hover:border-primary/40 hover:text-base-content'}"
+								onclick={() => toggleTag(tag.title)}
+								aria-pressed={selectedTags.includes(tag.title)}
+							>
+								{tag.title}
+							</button>
+						{/each}
+						{#if selectedTags.length > 0}
+							<button
+								type="button"
+								class="btn btn-ghost btn-xs whitespace-nowrap"
+								onclick={() => (selectedTags = [])}
+							>
+								Clear
+							</button>
+						{/if}
+					</div>
 				</div>
 			{/if}
 		</div>
@@ -746,72 +727,80 @@
 				class="card border border-base-200 bg-base-100 shadow-sm"
 				transition:slide={{ duration: 150 }}
 			>
-				<div class="card-body flex flex-wrap items-end gap-3 p-4">
-					<div class="form-control">
-						<label class="label py-1" for="custom-start-date">
-							<span class="label-text text-xs">From</span>
-						</label>
-						<input
-							id="custom-start-date"
-							type="date"
-							bind:value={customStart}
-							class="input input-bordered input-sm"
-						/>
+				<div class="card-body gap-3 p-4">
+					<div class="grid grid-cols-2 gap-3 sm:max-w-md">
+						<div class="form-control min-w-0">
+							<label class="label py-1" for="custom-start-date">
+								<span class="label-text text-xs">From</span>
+							</label>
+							<input
+								id="custom-start-date"
+								type="date"
+								bind:value={customStart}
+								class="input input-bordered w-full"
+							/>
+						</div>
+						<div class="form-control min-w-0">
+							<label class="label py-1" for="custom-end-date">
+								<span class="label-text text-xs">To</span>
+							</label>
+							<input
+								id="custom-end-date"
+								type="date"
+								bind:value={customEnd}
+								class="input input-bordered w-full"
+							/>
+						</div>
 					</div>
-					<div class="form-control">
-						<label class="label py-1" for="custom-end-date">
-							<span class="label-text text-xs">To</span>
-						</label>
-						<input
-							id="custom-end-date"
-							type="date"
-							bind:value={customEnd}
-							class="input input-bordered input-sm"
-						/>
+					<div class="flex gap-2">
+						<button
+							class="btn btn-primary flex-1 sm:flex-none"
+							onclick={applyCustomDate}
+							disabled={!customStart && !customEnd}
+						>
+							Apply range
+						</button>
+						<button
+							class="btn btn-ghost"
+							onclick={() => {
+								showCustomDate = false;
+								selectedTimeRange = 'all';
+							}}
+						>
+							Cancel
+						</button>
 					</div>
-					<button
-						class="btn btn-primary btn-sm"
-						onclick={applyCustomDate}
-						disabled={!customStart && !customEnd}
-					>
-						Apply range
-					</button>
-					<button
-						class="btn btn-ghost btn-sm"
-						onclick={() => {
-							showCustomDate = false;
-							selectedTimeRange = 'all';
-						}}
-					>
-						Cancel
-					</button>
 				</div>
 			</div>
 		{/if}
 
 		<!-- ============================= Content ============================= -->
 		{#if loading}
-			<div class="flex min-h-[50vh] items-center justify-center">
-				<span class="loading loading-spinner loading-lg text-primary"></span>
+			<div class="card border border-base-200 bg-base-100 shadow-sm" aria-busy="true">
+				{#each Array.from({ length: 6 }) as _}
+					<div
+						class="flex items-start justify-between gap-3 border-b border-base-200 px-4 py-3 last:border-b-0"
+					>
+						<div class="flex-1 space-y-2">
+							<div class="skeleton h-4 w-2/3"></div>
+							<div class="skeleton h-3 w-1/2"></div>
+						</div>
+						<div class="skeleton h-4 w-14"></div>
+					</div>
+				{/each}
 			</div>
 		{:else if error}
-			<div class="alert alert-error shadow-sm">
+			<div class="alert alert-error shadow-sm" role="alert">
 				<span>{error}</span>
 			</div>
 		{:else if allEntries.length === 0}
 			<!-- Empty state -->
 			<div class="card border border-base-200 bg-base-100 shadow-sm">
-				<div class="card-body items-center py-16 text-center">
-					<span
-						class="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 text-primary"
-						aria-hidden="true"
-					>
-						<ListChecks size={28} />
-					</span>
+				<div class="card-body items-center py-14 text-center">
 					<h2 class="text-xl font-bold">
 						{hasActiveFilters ? 'No entries match your filters' : 'No tracked time yet'}
 					</h2>
-					<p class="mt-1 max-w-sm text-sm text-base-content/60">
+					<p class="mt-1 max-w-sm text-sm text-base-content/70">
 						{#if hasActiveFilters}
 							Try broadening the time range, or clearing the search / project / tag filters.
 						{:else}
@@ -821,7 +810,7 @@
 					{#if !hasActiveFilters}
 						<button
 							type="button"
-							class="btn btn-primary btn-sm mt-4 gap-2"
+							class="btn btn-primary mt-4 gap-2"
 							onclick={() => gotoApp('/timer')}
 						>
 							<span aria-hidden="true"><Play size={15} /></span>
@@ -832,20 +821,23 @@
 			</div>
 		{:else}
 			<!-- Day-grouped journal -->
-			<div class="card overflow-hidden border border-base-200 bg-base-100 shadow-sm">
-				{#each dayGroups as group (group.key)}
+			<div class="card border border-base-200 bg-base-100 shadow-sm">
+				{#each dayGroups as group, gi (group.key)}
 					<div class="border-b border-base-200/70 last:border-b-0">
-						<!-- Group header -->
-						<div class="flex items-center gap-3 bg-base-200/40 px-4 py-2.5">
-							<span class="text-xs font-semibold uppercase tracking-wider text-base-content/70">
-								{group.label}
-							</span>
-							<span class="text-xs text-base-content/40">
+						<!-- Group header: stays pinned under the app bar while its day scrolls -->
+						<div
+							class="sticky z-10 flex items-baseline gap-3 border-b border-base-200/70 bg-base-200 px-4 py-2 {gi ===
+							0
+								? 'rounded-t-box'
+								: ''}"
+							style="top: var(--app-bar-height, 3.5rem)"
+						>
+							<h3 class="text-sm font-semibold">{group.label}</h3>
+							<span class="text-xs text-base-content/70">
 								{group.entries.length}
 								{group.entries.length === 1 ? 'entry' : 'entries'}
 							</span>
-							<div class="h-px flex-1 bg-base-200"></div>
-							<span class="font-mono text-xs font-medium text-base-content/60">
+							<span class="ml-auto font-mono text-sm font-medium tabular-nums">
 								{formatDurationShort(group.totalSeconds)}
 							</span>
 						</div>
@@ -853,78 +845,62 @@
 						<!-- Rows -->
 						<div class="divide-y divide-base-200/60">
 							{#each group.entries as entry (entry.id)}
-								{@const status = getStatusBadge(entry)}
 								<div
 									role="button"
 									tabindex="0"
-									class="group flex cursor-pointer items-center gap-4 px-4 py-3 transition-colors hover:bg-base-200/50 focus-visible:bg-base-200/50 focus-visible:outline-none"
+									class="group flex cursor-pointer items-start gap-3 px-4 py-3 transition-colors hover:bg-base-200/50 focus-visible:bg-base-200/50 focus-visible:outline-none"
 									onclick={() => openEntryModal(entry)}
 									onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && openEntryModal(entry)}
 								>
-									<!-- Accent bar -->
-									<span
-										class="w-1 shrink-0 self-stretch rounded-full {entry.is_active
-											? 'animate-pulse bg-success'
-											: 'bg-base-300 transition-colors group-hover:bg-primary/50'}"
-										aria-hidden="true"
-									></span>
+									<!-- Title + meta + tags -->
+									<div class="min-w-0 flex-1">
+										<div class="flex items-center gap-2">
+											<p class="truncate font-medium">{entry.title || '(untitled)'}</p>
+											{#if entry.is_active}
+												<span class="badge badge-success badge-sm shrink-0">Active</span>
+											{/if}
+										</div>
+										<p
+											class="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-base-content/70"
+										>
+											{#if entry.project}
+												<span class="inline-flex min-w-0 items-center gap-1">
+													<span aria-hidden="true"><Briefcase size={11} class="shrink-0" /></span>
+													<span class="truncate">{entry.project}</span>
+												</span>
+											{/if}
+											<span class="tabular-nums">{formatTimeRange(entry)}</span>
+										</p>
+										{#if entry.tags && entry.tags.length > 0}
+											<div class="mt-1.5 flex flex-wrap gap-1">
+												{#each entry.tags.slice(0, 3) as tag (typeof tag === 'string' ? tag : tag.id)}
+													{#if typeof tag === 'string'}
+														<span class="badge badge-outline badge-xs">{tag}</span>
+													{:else}
+														<TagChip {tag} size="xs" />
+													{/if}
+												{/each}
+												{#if entry.tags.length > 3}
+													<span class="badge badge-ghost badge-xs">+{entry.tags.length - 3}</span>
+												{/if}
+											</div>
+										{/if}
+									</div>
 
 									<!-- Duration -->
 									<div
-										class="w-16 shrink-0 text-right font-mono text-sm font-semibold sm:w-20 {entry.is_active
+										class="shrink-0 pt-0.5 text-right font-mono text-sm font-semibold tabular-nums {entry.is_active
 											? 'text-success'
-											: 'text-base-content'}"
+											: ''}"
 									>
 										{formatDuration(entry.duration)}
 									</div>
 
-									<!-- Title + meta -->
-									<div class="min-w-0 flex-1">
-										<div class="truncate font-medium">{entry.title || '(untitled)'}</div>
-										<div
-											class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-base-content/60"
-										>
-											{#if entry.project}
-												<span class="inline-flex items-center gap-1">
-													<span aria-hidden="true"
-														><Briefcase size={11} class="text-base-content/40" /></span
-													>
-													{entry.project}
-												</span>
-											{/if}
-											<span class="inline-flex items-center gap-1">
-												<span aria-hidden="true"
-													><Clock size={11} class="text-base-content/40" /></span
-												>
-												{formatTimeRange(entry)}
-											</span>
-											<span class="badge badge-ghost badge-xs gap-1 border-0 {status.class}">
-												{status.text}
-											</span>
-										</div>
-									</div>
-
-									<!-- Tags -->
-									{#if entry.tags && entry.tags.length > 0}
-										<div class="hidden shrink-0 flex-wrap justify-end gap-1 sm:flex">
-											{#each entry.tags.slice(0, 3) as tag (typeof tag === 'string' ? tag : tag.id)}
-												{#if typeof tag === 'string'}
-													<span class="badge badge-outline badge-xs">{tag}</span>
-												{:else}
-													<TagChip {tag} size="xs" />
-												{/if}
-											{/each}
-											{#if entry.tags.length > 3}
-												<span class="badge badge-ghost badge-xs">+{entry.tags.length - 3}</span>
-											{/if}
-										</div>
-									{/if}
-
 									<span
-										class="shrink-0 transition-transform group-hover:translate-x-0.5"
+										class="hidden shrink-0 self-center transition-transform group-hover:translate-x-0.5 sm:block"
 										aria-hidden="true"
 									>
-										<ChevronRight size={15} class="text-base-content/30" />
+										<ChevronRight size={15} class="text-base-content/40" />
 									</span>
 								</div>
 							{/each}
@@ -934,21 +910,21 @@
 			</div>
 
 			<!-- Pagination -->
-			<div class="flex flex-col items-center justify-between gap-3 sm:flex-row">
-				<div class="text-sm text-base-content/60">
-					{allEntries.length} shown
+			<div class="flex flex-col items-stretch justify-between gap-3 sm:flex-row sm:items-center">
+				<p class="text-sm text-base-content/70">
+					{allEntries.length} shown.
 					{#if hasPrevious}
-						• earlier pages available
+						Earlier pages available.
 					{:else if hasNext}
-						• more entries available
+						More entries available.
 					{:else}
-						• all matching entries shown
+						All matching entries shown.
 					{/if}
-				</div>
+				</p>
 
-				<div class="flex gap-2">
+				<div class="grid grid-cols-2 gap-2 sm:flex">
 					<button
-						class="btn btn-outline btn-sm gap-1.5"
+						class="btn btn-outline gap-1.5 sm:btn-sm"
 						disabled={!hasPrevious || isFetchingPage}
 						onclick={goToPrevious}
 					>
@@ -956,7 +932,7 @@
 						Previous
 					</button>
 					<button
-						class="btn btn-outline btn-sm gap-1.5"
+						class="btn btn-outline gap-1.5 sm:btn-sm"
 						disabled={!hasNext || isFetchingPage}
 						onclick={goToNext}
 					>

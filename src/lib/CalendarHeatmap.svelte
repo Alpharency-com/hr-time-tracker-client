@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { useAllTimeEntriesInRange } from '$lib/queries/timeEntries';
+	import { useAllTimeEntriesInRange, getTehranToday } from '$lib/queries/timeEntries';
 	import type { TimeEntry } from '$lib/api';
 	import { network } from '$lib/network';
+	import { DAY_LABELS_SAT_FIRST, formatDuration, formatLocalDate } from '$lib/reports/analytics';
 	import confetti from 'canvas-confetti';
 	var scalar = 2;
 
@@ -12,42 +13,37 @@
 	var star = confetti.shapeFromText({ text: '🌟', scalar });
 	var fire = confetti.shapeFromText({ text: '🔥', scalar });
 
-	// Per-day data structure
 	interface HeatmapData {
-		date: string; // YYYY-MM-DD
+		date: string; // YYYY-MM-DD (Tehran calendar day)
+		day: number; // day of month
 		value: number; // total seconds
 		entries: TimeEntry[];
 	}
 
+	const TEHRAN_OFFSET_MS = 3.5 * 3600_000; // Asia/Tehran is a fixed +03:30 (no DST)
+	const DAY_MS = 86_400_000;
+
 	let currentMonth = $state(new Date());
 
-	// Server state via TanStack Query — the COMPLETE month dataset, fetched through
-	// the shared range query (every page). The query key reacts to `currentMonth`,
-	// so navigating months re-fetches automatically; results are cached and
-	// invalidated by any timer start/stop/edit (queryKeys.timeEntries.all).
+	// The COMPLETE month dataset, fetched through the shared range query. The key
+	// follows `currentMonth`, so navigating months re-fetches; any timer
+	// start/stop/edit invalidates it (queryKeys.timeEntries.all).
 	const monthQuery = useAllTimeEntriesInRange(
-		() => {
-			const anchor = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
-			return formatLocalDate(anchor);
-		},
-		() => {
-			const anchor = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
-			return formatLocalDate(anchor);
-		}
+		() => formatLocalDate(new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1)),
+		() => formatLocalDate(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0))
 	);
 
 	const monthData = $derived(buildMonthData(monthQuery.data ?? [], currentMonth));
-	let days = $derived(monthData.days);
-	let weeks = $derived(monthData.weeks);
-	let totalMonthSeconds = $derived(monthData.totalMonthSeconds);
-	let monthLabel = $derived(
-		new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).toLocaleString(undefined, {
-			month: 'short',
-			year: 'numeric'
-		})
+	const cells = $derived(monthData.cells);
+	const todayStr = getTehranToday();
+	const monthLabel = $derived(
+		currentMonth.toLocaleString('en', { month: 'long', year: 'numeric' })
 	);
-	let loading = $derived(monthQuery.isPending);
-	let error = $derived(
+	const isCurrentMonth = $derived(
+		formatLocalDate(currentMonth).slice(0, 7) === todayStr.slice(0, 7)
+	);
+	const loading = $derived(monthQuery.isPending);
+	const error = $derived(
 		!monthQuery.data && monthQuery.isError
 			? !$network.isOnline
 				? 'No cached data available. Please connect to the internet.'
@@ -55,142 +51,70 @@
 			: ''
 	);
 
-	function formatLocalDate(date: Date): string {
-		const year = date.getFullYear();
-		const month = String(date.getMonth() + 1).padStart(2, '0');
-		const day = String(date.getDate()).padStart(2, '0');
-		return `${year}-${month}-${day}`;
+	/** Tehran calendar day (YYYY-MM-DD) of an instant. */
+	function tehranDay(ms: number): string {
+		return new Date(ms + TEHRAN_OFFSET_MS).toISOString().slice(0, 10);
 	}
 
-	const weekdayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
 	/**
-	 * Pure computation: turn the month's raw entries into the heatmap grid.
-	 * Entry datetimes arrive in Asia/Tehran (+03:30), so date strings are taken
-	 * directly from the ISO values rather than re-converting via the browser tz.
+	 * Pure computation: turn the month's raw entries into per-day totals.
+	 * An entry's recorded duration is attributed to the day it started; if it
+	 * crosses midnight (Tehran) the duration is split across days in proportion
+	 * to the time spent in each, so day values always add up to the month total.
 	 */
 	function buildMonthData(entries: TimeEntry[], baseDate: Date) {
 		const year = baseDate.getFullYear();
 		const month = baseDate.getMonth();
-
-		const anchor = new Date(year, month, 1);
-		const firstDayOfMonth = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
-		const lastDayOfMonth = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
+		const daysInMonth = new Date(year, month + 1, 0).getDate();
 
 		const dayMap = new Map<string, HeatmapData>();
-		const daysInMonth = lastDayOfMonth.getDate();
-
 		for (let day = 1; day <= daysInMonth; day++) {
-			const d = new Date(anchor.getFullYear(), anchor.getMonth(), day);
-			const ds = formatLocalDate(d);
-			dayMap.set(ds, { date: ds, value: 0, entries: [] });
+			const ds = formatLocalDate(new Date(year, month, day));
+			dayMap.set(ds, { date: ds, day, value: 0, entries: [] });
 		}
 
-		// Helper function to get start of day in Tehran timezone
-		function getStartOfDay(dateStr: string): Date {
-			const isoString = `${dateStr}T00:00:00+03:30`;
-			return new Date(isoString);
-		}
-
-		// Helper function to get end of day in Tehran timezone
-		function getEndOfDay(dateStr: string): Date {
-			const isoString = `${dateStr}T23:59:59.999+03:30`;
-			return new Date(isoString);
-		}
-
+		const now = Date.now();
+		let totalSeconds = 0;
 		for (const entry of entries) {
-			// Calculate total duration
-			let totalSeconds = 0;
-			if (entry.duration) {
-				totalSeconds = parseInt(entry.duration, 10) || 0;
-			} else if (entry.is_active) {
-				const startTime = new Date(entry.start_time).getTime();
-				totalSeconds = Math.floor((Date.now() - startTime) / 1000);
+			const startMs = new Date(entry.start_time).getTime();
+			const endMs = entry.end_time ? new Date(entry.end_time).getTime() : now;
+			const seconds = entry.duration
+				? parseInt(entry.duration, 10) || 0
+				: entry.is_active
+					? Math.floor((now - startMs) / 1000)
+					: 0;
+			if (seconds <= 0) continue;
+
+			const startDay = tehranDay(startMs);
+			dayMap.get(startDay)?.entries.push(entry);
+			totalSeconds += seconds;
+
+			if (startDay === tehranDay(endMs) || endMs <= startMs) {
+				const d = dayMap.get(startDay);
+				if (d) d.value += seconds;
+				continue;
 			}
-
-			if (totalSeconds <= 0) continue;
-
-			// Extract date strings from API timestamps (already in Tehran timezone)
-			const startDateStr = entry.start_time.split('T')[0];
-			const endDateStr = entry.end_time ? entry.end_time.split('T')[0] : startDateStr;
-
-			// Parse full datetime objects
-			const startTime = new Date(entry.start_time);
-			const endTime = entry.end_time ? new Date(entry.end_time) : new Date();
-
-			// Create a set of all days this entry spans
-			const daysSet = new Set<string>();
-			let currentDay = new Date(startDateStr);
-			const endDayObj = new Date(endDateStr);
-
-			while (currentDay <= endDayObj) {
-				const dayStr = currentDay.toISOString().split('T')[0];
-				daysSet.add(dayStr);
-				currentDay.setDate(currentDay.getDate() + 1);
-			}
-
-			if (daysSet.size === 0) {
-				daysSet.add(startDateStr);
-			}
-
-			// Distribute time across all days the entry spans
-			for (const dayStr of daysSet) {
-				const dayData = dayMap.get(dayStr);
-				if (!dayData) continue;
-
-				// Determine time boundaries for this specific day
-				let dayStartTime: Date;
-				let dayEndTime: Date;
-
-				if (dayStr === startDateStr && dayStr === endDateStr) {
-					// Single day entry
-					dayStartTime = startTime;
-					dayEndTime = endTime;
-				} else if (dayStr === startDateStr) {
-					// First day of multi-day entry
-					dayStartTime = startTime;
-					dayEndTime = getEndOfDay(dayStr);
-				} else if (dayStr === endDateStr) {
-					// Last day of multi-day entry
-					dayStartTime = getStartOfDay(dayStr);
-					dayEndTime = endTime;
-				} else {
-					// Middle day - full 24 hours
-					dayStartTime = getStartOfDay(dayStr);
-					dayEndTime = getEndOfDay(dayStr);
-				}
-
-				// Calculate duration for this specific day
-				const dayDurationMs = dayEndTime.getTime() - dayStartTime.getTime();
-				const dayDurationSeconds = Math.floor(dayDurationMs / 1000);
-
-				// Add entry to this day (only once, on the start day)
-				if (dayStr === startDateStr) {
-					dayData.entries.push(entry);
-				}
-
-				// Add the day's portion of time
-				dayData.value += dayDurationSeconds;
+			const span = endMs - startMs;
+			for (
+				let dayStart = Date.parse(`${startDay}T00:00:00+03:30`);
+				dayStart < endMs;
+				dayStart += DAY_MS
+			) {
+				const overlap = Math.min(endMs, dayStart + DAY_MS) - Math.max(startMs, dayStart);
+				const d = dayMap.get(tehranDay(dayStart));
+				if (d && overlap > 0) d.value += (seconds * overlap) / span;
 			}
 		}
 
-		const days = Array.from(dayMap.values()).sort(
-			(a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
-		);
+		const days = Array.from(dayMap.values());
+		// Saturday-first grid (matches the Reports page); pad to whole weeks.
+		const lead = (new Date(year, month, 1).getDay() + 1) % 7;
+		const cells: (HeatmapData | null)[] = [...Array(lead).fill(null), ...days];
+		while (cells.length % 7 !== 0) cells.push(null);
 
-		// Compute total from raw entry durations (not day-split values) so it matches reports
-		const totalMonthSeconds = entries.reduce((sum, entry) => {
-			if (entry.duration) {
-				return sum + (parseInt(entry.duration, 10) || 0);
-			} else if (entry.is_active) {
-				return sum + Math.floor((Date.now() - new Date(entry.start_time).getTime()) / 1000);
-			}
-			return sum;
-		}, 0);
-
-		const weeks = buildWeeks(firstDayOfMonth, lastDayOfMonth, dayMap);
-
-		return { days, weeks, totalMonthSeconds };
+		const activeDays = days.filter((d) => d.value > 0).length;
+		const maxDaySeconds = Math.max(0, ...days.map((d) => d.value));
+		return { cells, totalSeconds, activeDays, maxDaySeconds };
 	}
 
 	function goToPreviousMonth() {
@@ -201,117 +125,59 @@
 		currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1);
 	}
 
-	function buildWeeks(
-		firstDay: Date,
-		lastDay: Date,
-		dayMap: Map<string, HeatmapData>
-	): (HeatmapData | null)[][] {
-		// Build a Sunday-Saturday grid, but only days within [firstDay, lastDay]
-		// get data; days outside the month are null placeholders.
-		const start = new Date(firstDay);
-		start.setDate(firstDay.getDate() - firstDay.getDay()); // back to Sunday
-
-		const end = new Date(lastDay);
-		end.setDate(lastDay.getDate() + (6 - lastDay.getDay())); // forward to Saturday
-
-		const result: (HeatmapData | null)[][] = [];
-		let currentWeek: (HeatmapData | null)[] = [];
-
-		for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-			let day: HeatmapData | null = null;
-			if (d >= firstDay && d <= lastDay) {
-				const ds = formatLocalDate(d);
-				day = dayMap.get(ds) ?? null;
-			}
-			currentWeek.push(day);
-			if (d.getDay() === 6) {
-				result.push(currentWeek);
-				currentWeek = [];
-			}
-		}
-
-		if (currentWeek.length > 0) {
-			result.push(currentWeek);
-		}
-
-		// Ensure we always render 6 weeks to keep widget height stable
-		while (result.length < 6) {
-			result.push(new Array<HeatmapData | null>(7).fill(null));
-		}
-
-		return result;
+	function goToToday() {
+		currentMonth = new Date();
 	}
 
-	function secondsToHHMMSS(seconds: number): string {
-		if (!seconds || isNaN(seconds)) {
-			return '00:00:00';
-		}
-		const hours = Math.floor(seconds / 3600);
-		const minutes = Math.floor((seconds % 3600) / 60);
-		const secs = seconds % 60;
-		return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-	}
-
-	// 10-step brightness gradient anchored on the theme primary color - REVERSED for correct intensity mapping
-	const activityPalette = [
-		'bg-base-300/40', // no activity
-		'bg-primary/55', // lowest activity
-		'bg-primary/60',
-		'bg-primary/65',
-		'bg-primary/70',
-		'bg-primary/75',
-		'bg-primary/80',
-		'bg-primary/85',
-		'bg-primary/90',
-		'bg-primary/95' // highest activity
+	// 0 = no activity, 1..4 = quartiles of the month's busiest day.
+	const levelClasses = [
+		'bg-base-200',
+		'bg-primary/20',
+		'bg-primary/40',
+		'bg-primary/65 text-primary-content',
+		'bg-primary text-primary-content'
 	];
 
-	const maxDaySeconds = $derived(
-		Math.max(0, ...days.map((d) => d.value).filter((v) => !isNaN(v) && v !== null))
-	);
-
-	function activityClass(seconds: number): string {
-		if (seconds === 0 || maxDaySeconds === 0 || isNaN(maxDaySeconds)) return activityPalette[0];
-		const level = seconds / maxDaySeconds; // 0..1
-		const idx = Math.min(
-			activityPalette.length - 1,
-			Math.max(1, Math.ceil(level * (activityPalette.length - 1)))
-		);
-		return activityPalette[idx];
+	function levelOf(seconds: number): number {
+		const max = monthData.maxDaySeconds;
+		if (seconds <= 0 || max <= 0) return 0;
+		return Math.min(4, Math.max(1, Math.ceil((seconds / max) * 4)));
 	}
 
-	function cellClasses(day: HeatmapData | null): string {
-		if (!day) {
-			// Outside current month: keep the grid structure but show an empty cell
-			return 'aspect-square rounded-md bg-transparent';
-		}
-		return `aspect-square rounded-md border border-base-300 ${activityClass(day.value)}`;
+	function dayLabel(day: HeatmapData): string {
+		const [y, m, d] = day.date.split('-').map(Number);
+		const when = new Date(y, m - 1, d).toLocaleDateString('en', {
+			weekday: 'short',
+			month: 'short',
+			day: 'numeric'
+		});
+		const n = day.entries.length;
+		return day.value > 0
+			? `${when} · ${formatDuration(day.value)} · ${n} ${n === 1 ? 'entry' : 'entries'}`
+			: `${when} · no activity`;
 	}
 
 	// Easter egg: confetti for days with ≥8 hours
-	let confettiFiredFor = $state<Set<string>>(new Set());
+	const confettiFiredFor = new Set<string>();
 
-	async function handleDayHover(event: MouseEvent, day: HeatmapData | null) {
-		if (!day || confettiFiredFor.has(day.date) || isNaN(day.value)) return;
-		const seconds = day.value;
-		if (seconds >= 8 * 3600) {
-			const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-			const x = rect.left + rect.width / 2;
-			const y = rect.top + rect.height / 2;
-			await confetti({
-				particleCount: 30,
-				spread: 60,
-				startVelocity: 40,
-				origin: { x: x / window.innerWidth, y: y / window.innerHeight },
-				// colors: ['#ff0', '#0f0', '#0ff', '#f0f', '#00f', '#f00'],
-				ticks: 30,
-				gravity: 0.9,
-				scalar: 2,
-				shapes: [clock, money, money2, gold, star, fire],
-				disableForReducedMotion: true
-			});
-			confettiFiredFor.add(day.date);
-		}
+	async function handleDayHover(event: MouseEvent, day: HeatmapData) {
+		if (confettiFiredFor.has(day.date) || day.value < 8 * 3600) return;
+		confettiFiredFor.add(day.date);
+		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+		await confetti({
+			particleCount: 30,
+			spread: 60,
+			startVelocity: 40,
+			origin: {
+				x: (rect.left + rect.width / 2) / window.innerWidth,
+				y: (rect.top + rect.height / 2) / window.innerHeight
+			},
+			ticks: 30,
+			gravity: 0.9,
+			scalar: 2,
+			shapes: [clock, money, money2, gold, star, fire],
+			disableForReducedMotion: true
+		});
 	}
 
 	function resetConfettiForDay(date: string) {
@@ -319,94 +185,119 @@
 	}
 </script>
 
-<div class="p-4 card bg-base-100 shadow-lg border border-base-200 glass-card h-full flex flex-col">
-	<h2 class="card-title text-sm mb-4 flex items-center">
-		<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-			<path
-				stroke-linecap="round"
-				stroke-linejoin="round"
-				stroke-width="2"
-				d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-			></path>
-		</svg>
-		Current Month Activity
-	</h2>
-
-	{#if error}
-		<div class="alert alert-error">
-			<span>{error}</span>
-		</div>
-	{:else}
-		<div class="w-full flex flex-col items-center gap-4">
-			<!-- Month navigation -->
-			<div
-				class="flex items-center justify-center gap-2 text-xs font-semibold text-base-content/80"
-			>
+<div class="card bg-base-100 shadow-lg border border-base-200 h-full flex flex-col">
+	<div class="card-body p-4 flex-1 flex flex-col gap-3">
+		<!-- Header: title + month navigation -->
+		<div class="flex flex-wrap items-center justify-between gap-2">
+			<h2 class="card-title text-sm flex items-center">
+				<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						stroke-width="2"
+						d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+					></path>
+				</svg>
+				Month Activity
+			</h2>
+			<div class="flex items-center gap-1 text-xs font-semibold">
 				<button
-					class="btn btn-ghost btn-xs"
+					class="btn btn-ghost btn-xs btn-square"
 					onclick={goToPreviousMonth}
 					aria-label="Previous month"
-					disabled={loading}
 				>
 					‹
 				</button>
-				<div class="flex items-center gap-2">
-					<div>{monthLabel}</div>
-					{#if loading}
-						<span class="loading loading-xs loading-spinner"></span>
-					{/if}
-				</div>
+				<span class="min-w-28 text-center tabular-nums">{monthLabel}</span>
 				<button
-					class="btn btn-ghost btn-xs"
+					class="btn btn-ghost btn-xs btn-square"
 					onclick={goToNextMonth}
 					aria-label="Next month"
-					disabled={loading}
+					disabled={isCurrentMonth}
 				>
 					›
 				</button>
+				{#if !isCurrentMonth}
+					<button class="btn btn-outline btn-xs" onclick={goToToday}>Today</button>
+				{/if}
 			</div>
+		</div>
 
-			<!-- Weekday labels -->
-			<div class="grid grid-cols-7 gap-1 w-full max-w-xs text-[10px] text-base-content/60">
-				{#each weekdayLabels as label}
-					<div class="h-4 flex items-center justify-center">{label}</div>
-				{/each}
+		{#if error}
+			<div class="alert alert-error">
+				<span>{error}</span>
 			</div>
+		{:else}
+			<div class="w-full max-w-md mx-auto flex-1 flex flex-col justify-center gap-1.5">
+				<!-- Weekday labels -->
+				<div class="grid grid-cols-7 gap-1.5 text-[10px] text-base-content/60 text-center">
+					{#each DAY_LABELS_SAT_FIRST as label}
+						<div>{label}</div>
+					{/each}
+				</div>
 
-			<!-- Calendar grid / skeleton -->
-			<div class="w-full max-w-xs">
 				{#if loading}
-					<!-- Single skeleton block approximating 7x6 grid ratio -->
-					<div class="w-full aspect-[7/6] rounded-md skeleton"></div>
+					<div class="w-full aspect-[7/5] rounded-md skeleton"></div>
 				{:else}
-					<div class="grid grid-cols-7 gap-1 fade-in-grid">
-						{#each weeks as week}
-							{#each week as day}
-								<div
-									class="tooltip tooltip-top"
-									data-tip={day
-										? `${day.date} • ${secondsToHHMMSS(day.value)} • ${day.entries.length} entries`
-										: ''}
-								>
+					<div class="grid grid-cols-7 gap-1.5 fade-in-grid">
+						{#each cells as day}
+							{#if day}
+								{@const future = day.date > todayStr}
+								<div class="tooltip tooltip-top" data-tip={dayLabel(day)}>
 									<div
-										role="gridcell"
-										tabindex="0"
-										aria-label={day ? `${day.date}: ${secondsToHHMMSS(day.value)}` : 'Empty cell'}
-										class={cellClasses(day)}
+										role="img"
+										aria-label={dayLabel(day)}
+										class="aspect-square rounded-md flex items-center justify-center text-[10px] tabular-nums transition-transform hover:scale-110 {levelClasses[
+											levelOf(day.value)
+										]} {day.date === todayStr
+											? 'ring-2 ring-primary ring-offset-1 ring-offset-base-100 font-bold'
+											: ''} {future ? 'opacity-40' : ''} {day.value === 0 ? 'text-base-content/50' : ''}"
 										onmouseenter={(e) => handleDayHover(e, day)}
-										onmouseleave={() => day && resetConfettiForDay(day.date)}
-									></div>
+										onmouseleave={() => resetConfettiForDay(day.date)}
+									>
+										{day.day}
+									</div>
 								</div>
-							{/each}
+							{:else}
+								<div class="aspect-square"></div>
+							{/if}
 						{/each}
 					</div>
 				{/if}
 			</div>
-			<div class="mt-2 text-center">
-				<p class="text-xs text-base-content/60">Total hours tracked: {Math.round((totalMonthSeconds / 3600) * 10) / 10}h</p>
+
+			<!-- Footer: month stats + legend -->
+			<div class="flex flex-wrap items-end justify-between gap-3 pt-1">
+				<div class="flex gap-5">
+					<div>
+						<p class="text-[10px] uppercase tracking-wider text-base-content/50">Total</p>
+						<p class="text-sm font-bold tabular-nums">
+							{loading ? '—' : formatDuration(monthData.totalSeconds)}
+						</p>
+					</div>
+					<div>
+						<p class="text-[10px] uppercase tracking-wider text-base-content/50">Active days</p>
+						<p class="text-sm font-bold tabular-nums">{loading ? '—' : monthData.activeDays}</p>
+					</div>
+					<div>
+						<p class="text-[10px] uppercase tracking-wider text-base-content/50">Daily avg</p>
+						<p class="text-sm font-bold tabular-nums">
+							{loading || !monthData.activeDays
+								? '—'
+								: formatDuration(monthData.totalSeconds / monthData.activeDays)}
+						</p>
+					</div>
+				</div>
+				<div class="flex items-center gap-1 text-[10px] text-base-content/60" aria-hidden="true">
+					Less
+					{#each levelClasses as cls}
+						<span class="w-3 h-3 rounded-sm {cls.split(' ')[0]}"></span>
+					{/each}
+					More
+				</div>
 			</div>
-		</div>
-	{/if}
+		{/if}
+	</div>
 </div>
 
 <style>
@@ -424,10 +315,5 @@
 			opacity: 1;
 			transform: translateY(0);
 		}
-	}
-	.glass-card {
-		background-color: color-mix(in oklch, oklch(var(--b1)) 85%, transparent);
-		border-color: oklch(var(--b2));
-		backdrop-filter: blur(10px);
 	}
 </style>
