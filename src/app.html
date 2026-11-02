@@ -25,6 +25,16 @@
 		</script>
 		<meta charset="utf-8" />
 		<link rel="icon" href="%sveltekit.assets%/favicon.png" />
+		<script>
+			// Seasonal favicon (northern-hemisphere months); installed app icons stay static
+			try {
+				const m = new Date().getMonth();
+				const season = m >= 2 && m <= 4 ? 'spring' : m <= 7 && m >= 5 ? 'summer' : m <= 10 && m >= 8 ? 'fall' : 'winter';
+				document.querySelector('link[rel="icon"]').href = '%sveltekit.assets%/icons-season/' + season + '.png';
+			} catch (e) {
+				console.warn('Seasonal favicon failed', e);
+			}
+		</script>
 		<link rel="apple-touch-icon" href="%sveltekit.assets%/apple-touch-icon.png" />
 		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 		<meta name="description" content="Track time, manage tasks and stay in flow." />
