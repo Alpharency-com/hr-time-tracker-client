@@ -9,9 +9,9 @@ import {
 import { get, writable } from 'svelte/store';
 
 // Create API client with 401 handling and timeout
-const createApiClient = () => {
+export const makeApiClient = (url: string) => {
 	return ky.create({
-		prefixUrl: get(baseUrl),
+		prefixUrl: url,
 		timeout: 15000, // 15 second timeout to prevent hanging requests
 		hooks: {
 			beforeRequest: [
@@ -53,52 +53,10 @@ const createApiClient = () => {
 	});
 };
 
-const apiStore = writable(createApiClient());
+const apiStore = writable(makeApiClient(get(baseUrl)));
 
 baseUrl.subscribe((url: string) => {
-	apiStore.set(
-		ky.create({
-			prefixUrl: url,
-			timeout: 15000, // 15 second timeout to prevent hanging requests
-			hooks: {
-				beforeRequest: [
-					(request: any) => {
-						const token = get(authToken);
-						if (token) {
-							request.headers.set('Authorization', `Token ${token}`);
-						}
-					}
-				],
-				afterResponse: [
-					async (request: any, options: any, response: any) => {
-						// Check if response is 401 Unauthorized
-						if (response.status === 401) {
-							console.warn('Received 401 Unauthorized, logging out user');
-
-							// Perform logout using global function with autoLogout flag
-							globalLogout(true);
-
-							// Throw an error to prevent further processing
-							throw new Error('Authentication failed');
-						}
-					}
-				],
-				beforeError: [
-					async (error: any) => {
-						const { response } = error;
-						if (response && response.body) {
-							try {
-								error.response._data = await response.clone().json();
-							} catch {
-								// Non-JSON error body — leave _data unset
-							}
-						}
-						return error;
-					}
-				]
-			}
-		})
-	);
+	apiStore.set(makeApiClient(url));
 });
 
 const api = {

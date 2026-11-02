@@ -1,5 +1,5 @@
 import { sveltekit } from '@sveltejs/kit/vite';
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import path from 'path';
 import { visualizer } from 'rollup-plugin-visualizer';
 import { readFileSync } from 'fs';
@@ -27,6 +27,10 @@ export default defineConfig(() => {
 			// Compile-time gate so web-only PWA wiring (manifest link, SW
 			// registration) is tree-shaken out of Tauri builds entirely.
 			__PWA_ENABLED__: JSON.stringify(ENABLE_PWA)
+		},
+		test: {
+			include: ['src/**/*.{test,spec}.ts'],
+			setupFiles: ['./vitest.setup.ts']
 		},
 		plugins: [
 			sveltekit(),

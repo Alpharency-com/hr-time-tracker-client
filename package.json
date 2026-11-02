@@ -17,7 +17,7 @@
     "generate:pwa-icons": "node ./scripts/generate-pwa-icons.mjs",
     "verify:pages": "node ./scripts/verify-pages-build.mjs --pages",
     "verify:tauri": "node ./scripts/verify-pages-build.mjs --tauri",
-    "check:createqueries-fix": "node ./scripts/check-createqueries-fix.mjs"
+    "test": "vitest run"
   },
   "devDependencies": {
     "@sveltejs/kit": "^2.7.2",

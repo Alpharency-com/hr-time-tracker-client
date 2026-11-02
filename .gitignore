@@ -22,3 +22,8 @@ vite.config.ts.timestamp-*
 
 # Tauri
 /src-tauri/target
+
+# Stray audit files
+check_out.txt
+Generated Image*.jpg
+.ua/

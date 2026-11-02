@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { TimeEntry } from '$lib/api';
 	import { useAllTimeEntriesInRange } from '$lib/queries/timeEntries';
+	import { formatLocalDate } from '$lib/reports/analytics';
 
 	// Chart data structure
 	interface DayData {
@@ -203,10 +204,12 @@
 
 			// Create a set of all days this entry spans
 			const daysSet = new Set<string>();
-			let currentDay = new Date(startDateStr);
-			const endDayObj = new Date(endDateStr);
+			const [startYear, startMonth, startDay] = startDateStr.split('-').map(Number);
+			const [endYear, endMonth, endDay] = endDateStr.split('-').map(Number);
+			const currentDay = new Date(startYear, startMonth - 1, startDay);
+			const endDayObj = new Date(endYear, endMonth - 1, endDay);
 			while (currentDay <= endDayObj) {
-				daysSet.add(currentDay.toISOString().split('T')[0]);
+				daysSet.add(formatLocalDate(currentDay));
 				currentDay.setDate(currentDay.getDate() + 1);
 			}
 

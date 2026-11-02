@@ -325,49 +325,51 @@ export const logoutAlert = writable<{ show: boolean; message: string }>({
 	message: ''
 });
 
+// Cache keys written by the api layer (see LOCALSTORAGE_PREFIX in api.ts).
+// Kept as a literal here to avoid importing api.ts (which imports this module).
+const API_CACHE_PREFIX = 'api_cache_';
+
+function removeAuthAndCacheKeys() {
+	const keysToRemove = ['authToken', 'user', 'ftt-query-cache'];
+
+	for (let i = localStorage.length - 1; i >= 0; i--) {
+		const key = localStorage.key(i);
+		if (!key) continue;
+		if (
+			key.startsWith(API_CACHE_PREFIX) ||
+			key.startsWith('timer_') ||
+			key.startsWith('dashboard_')
+		) {
+			keysToRemove.push(key);
+		}
+	}
+
+	for (const key of keysToRemove) {
+		try {
+			localStorage.removeItem(key);
+		} catch (e) {
+			logger.error(`Failed to remove ${key} during logout:`, e);
+		}
+	}
+}
+
 // Global logout function that can be used by API hooks
 export function globalLogout(autoLogout = false, customMessage?: string) {
-	// Clear only authentication-related data from localStorage, preserve settings
+	// Clear only authentication/cache data from localStorage, preserve settings
 	if (browser) {
-		// Get all keys before clearing to preserve settings
-		const keysToPreserve = [
-			'baseUrl',
-			'baseUrlHistory',
-			'theme',
-			'customThemes',
-			'minimizeToTray',
-			'closeToTray',
-			'autostart',
-			'timeEntriesDisplayMode',
-			'sidebarCollapsed'
-		];
+		// Wipe the TanStack cache (in-memory + persisted) so the next user never
+		// sees the previous user's data. Imported lazily to avoid a circular
+		// import (queryClient.ts imports from this module).
+		void import('./queryClient')
+			.then(({ queryClient, queryPersister }) => {
+				queryClient.clear();
+				queryPersister.removeClient();
+			})
+			.catch((e) => logger.error('Failed to clear query cache during logout:', e));
 
-		// Create a temporary object to store settings
-		const preservedSettings: Record<string, any> = {};
-		for (const key of keysToPreserve) {
-			const storedValue = localStorage.getItem(key);
-			if (storedValue !== null) {
-				// Always try to parse as JSON first, fall back to raw value
-				try {
-					preservedSettings[key] = JSON.parse(storedValue);
-				} catch (e) {
-					// If parsing fails, it's a plain string value
-					preservedSettings[key] = storedValue;
-				}
-			}
-		}
-
-		// Clear all localStorage
-		localStorage.clear();
-
-		// Restore only the preserved settings
-		for (const [key, value] of Object.entries(preservedSettings)) {
-			try {
-				localStorage.setItem(key, JSON.stringify(value));
-			} catch (e) {
-				logger.error(`Failed to restore setting ${key}:`, e);
-			}
-		}
+		// Remove only auth/cache keys so settings (theme, baseUrl, refresh rates,
+		// etc.) are left untouched and never re-serialized.
+		removeAuthAndCacheKeys();
 
 		// Clear sessionStorage completely (for security)
 		sessionStorage.clear();

@@ -44,6 +44,11 @@ jobs:
           bun-version: latest
       - run: bun i
 
+      - name: Check and test
+        run: |
+          bun run check
+          bun run test
+
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
 

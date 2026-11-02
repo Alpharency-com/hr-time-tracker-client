@@ -13,17 +13,16 @@ function formatLocalDate(date: Date): string {
 	return `${year}-${month}-${day}`;
 }
 
-/** Monday of the current week (local time), mirroring dashboard's getWeekStart(). */
+/** Saturday of the current week (local time), mirroring dashboard's getWeekStart(). */
 function getWeekStartLocal(): string {
 	const now = new Date();
-	const daysSinceMonday = (now.getDay() + 6) % 7;
-	const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysSinceMonday);
-	return formatLocalDate(monday);
-}
-
-/** Today in UTC (YYYY-MM-DD), mirroring dashboard's getTodayRange() which uses toISOString(). */
-function getUtcToday(): string {
-	return new Date().toISOString().split('T')[0];
+	const daysSinceSaturday = (now.getDay() + 1) % 7;
+	const saturday = new Date(
+		now.getFullYear(),
+		now.getMonth(),
+		now.getDate() - daysSinceSaturday
+	);
+	return formatLocalDate(saturday);
 }
 
 /**
@@ -126,9 +125,9 @@ export function prefetchRoute(path: string): void {
 			break;
 
 		case '/dashboard': {
-			// Mirrors dashboard/+page.svelte's createQueries exactly:
-			// today strip (UTC dates), recent activity, week summary, active timer.
-			const today = getUtcToday();
+			// Mirrors dashboard/+page.svelte's queries exactly:
+			// today strip (Tehran dates), recent activity, week summary, active timer.
+			const today = getTehranToday();
 			const weekStart = getWeekStartLocal();
 			void queryClient.prefetchQuery({
 				queryKey: queryKeys.timeEntries.filtered({
